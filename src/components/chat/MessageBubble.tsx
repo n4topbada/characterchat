@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { NarrationText } from "./NarrationSpan";
 import { extractStatus } from "@/lib/narration";
 
@@ -6,6 +7,7 @@ export type ChatMessage = {
   role: "user" | "model" | "system" | "tool";
   content: string;
   createdAt?: string | Date;
+  image?: { url: string; width: number; height: number } | null;
 };
 
 function formatTimestamp(v?: string | Date): string {
@@ -69,6 +71,21 @@ export function MessageBubble({
           {formatTimestamp(msg.createdAt)}
         </span>
       </div>
+      {msg.image ? (
+        <div
+          className="relative mb-2 overflow-hidden rounded-md border border-outline-variant bg-surface-container-low"
+          style={{ width: "min(320px, 75vw)" }}
+        >
+          <Image
+            src={msg.image.url}
+            alt=""
+            width={msg.image.width}
+            height={msg.image.height}
+            className="w-full h-auto block"
+            unoptimized
+          />
+        </div>
+      ) : null}
       <div className="relative bubble-receive bg-surface-container-high px-5 py-3 shadow-tinted-sm border-l-2 border-primary">
         <p className="text-sm leading-relaxed whitespace-pre-wrap break-words text-on-surface">
           <NarrationText value={body} />

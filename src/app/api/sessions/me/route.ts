@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, json } from "@/lib/api-utils";
+import { stripImageTags } from "@/lib/assets/pickAsset";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,7 @@ export async function GET() {
         portraitUrl: s.character.assets[0]?.blobUrl ?? null,
         accentColor: s.character.accentColor,
       },
-      preview: s.messages[0]?.content.slice(0, 80) ?? "",
+      preview: stripImageTags(s.messages[0]?.content ?? "").slice(0, 80),
     }))
   );
 }

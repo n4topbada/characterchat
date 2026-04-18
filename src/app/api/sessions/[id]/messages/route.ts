@@ -7,6 +7,12 @@ import { buildSystemInstruction, streamChat } from "@/lib/gemini/chat";
 import { sseStream } from "@/lib/sse";
 import { retrieveForPrompt } from "@/lib/rag/retrieve";
 import { extractStatus } from "@/lib/narration";
+import {
+  pickBestAsset,
+  statusToTokens,
+  stripImageTags,
+  type PickableAsset,
+} from "@/lib/assets/pickAsset";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,6 +40,11 @@ export async function GET(
     where: { sessionId: id },
     orderBy: { createdAt: "asc" },
     take: 200,
+    include: {
+      imageAsset: {
+        select: { id: true, blobUrl: true, width: true, height: true },
+      },
+    },
   });
   return NextResponse.json(
     rows.map((m) => ({
@@ -41,6 +52,13 @@ export async function GET(
       role: m.role,
       content: m.content,
       createdAt: m.createdAt,
+      image: m.imageAsset
+        ? {
+            url: m.imageAsset.blobUrl,
+            width: m.imageAsset.width,
+            height: m.imageAsset.height,
+          }
+        : null,
     }))
   );
 }
@@ -110,6 +128,28 @@ export async function POST(
     userId: gate.userId,
   });
 
+  // 4b. gallery 에셋 목록 (이미지 트리거 매칭용). 없으면 LLM 에 이미지 표현 블록을 넣지 않는다.
+  const galleryAssets: PickableAsset[] = await prisma.asset.findMany({
+    where: { characterId: session.characterId, kind: "gallery" },
+    select: {
+      id: true,
+      blobUrl: true,
+      width: true,
+      height: true,
+      sceneTag: true,
+      expression: true,
+      composition: true,
+      pose: true,
+      clothingTag: true,
+      moodFit: true,
+      locationFit: true,
+      nsfwLevel: true,
+      description: true,
+      triggerTags: true,
+      kind: true,
+    },
+  });
+
   const systemInstruction = buildSystemInstruction({
     core: {
       displayName: core.displayName,
@@ -162,6 +202,7 @@ export async function POST(
     },
     statusPanelSchema: cfg.statusPanelSchema ?? null,
     sessionSummary: session.summary,
+    hasImageAssets: galleryAssets.length > 0,
   });
 
   return sseStream(async (send) => {
@@ -183,12 +224,39 @@ export async function POST(
         send("delta", { text: delta });
       }
       const messageId = newId();
+
+      // <status>{...}</status> 블록이 있으면 PersonaState.statusPayload 에 반영.
+      // 파싱 실패는 무시 — 채팅 흐름을 막으면 안 된다.
+      const { status } = extractStatus(full);
+
+      // status 의 outfit/location/mood 를 pickAsset 토큰으로 변환해 Asset 을 고른다.
+      // (모델이 인라인 <img> 토큰을 감당 못해서 status 기반으로 전환)
+      let pickedAsset: PickableAsset | null = null;
+      if (galleryAssets.length && status && typeof status === "object") {
+        const tokens = statusToTokens(status);
+        if (tokens.length) {
+          const s = status as Record<string, unknown>;
+          const horny = typeof s.horny === "number" ? (s.horny as number) : null;
+          const affection =
+            typeof s.affection === "number" ? (s.affection as number) : null;
+          pickedAsset = pickBestAsset(galleryAssets, tokens, {
+            nsfwEnabled: session.character.nsfwEnabled,
+            horny,
+            affection,
+          });
+        }
+      }
+
+      // 저장 전 본문에서 레거시 <img> 토큰 제거 (있을 경우 대비).
+      const cleanContent = stripImageTags(full);
+
       await prisma.message.create({
         data: {
           id: messageId,
           sessionId: id,
           role: "model",
-          content: full,
+          content: cleanContent,
+          imageAssetId: pickedAsset?.id ?? null,
         },
       });
       await prisma.session.update({
@@ -196,9 +264,15 @@ export async function POST(
         data: { lastMessageAt: new Date() },
       });
 
-      // <status>{...}</status> 블록이 있으면 PersonaState.statusPayload 에 반영.
-      // 파싱 실패는 무시 — 채팅 흐름을 막으면 안 된다.
-      const { status } = extractStatus(full);
+      if (pickedAsset) {
+        send("image", {
+          id: messageId,
+          url: pickedAsset.blobUrl,
+          width: pickedAsset.width,
+          height: pickedAsset.height,
+        });
+      }
+
       if (status && typeof status === "object") {
         await prisma.personaState.upsert({
           where: {

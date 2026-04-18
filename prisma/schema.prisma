@@ -99,6 +99,7 @@ model Character {
   portraitAssetId String?
   heroAssetId     String?
   isPublic        Boolean          @default(true)
+  nsfwEnabled     Boolean          @default(false)
   createdAt       DateTime         @default(now())
   config          CharacterConfig?
   personaCore     PersonaCore?
@@ -232,19 +233,36 @@ model EventTypeTemplate {
   @@index([characterId])
 }
 
+// 이미지 에셋. portrait/hero 외에 gallery 는 태그 기반으로 장면/표정/구도/구성에
+// 따라 대화 중 트리거될 수 있다. 태그 필드는 모두 nullable 하여 기존 캐릭터(Aria 등)는
+// 영향을 받지 않는다.
 model Asset {
-  id          String    @id
-  characterId String
-  kind        AssetKind
-  blobUrl     String
-  mimeType    String
-  width       Int
-  height      Int
-  order       Int       @default(0)
-  createdAt   DateTime  @default(now())
-  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  id           String    @id
+  characterId  String
+  kind         AssetKind
+  blobUrl      String
+  mimeType     String
+  width        Int
+  height       Int
+  order        Int       @default(0)
+  // 태그 필드 — gallery 이미지의 트리거 매칭용
+  sceneTag     String?   // casual | home | naked | underwear | wet | sleep | sex_bg | sex_b | sex_nobg ...
+  expression   String?   // neutral | smile | shy | teasing | seductive | sleeping | crying | moaning ...
+  composition  String?   // full_body | waist_up | bust | face_close | pov | wide
+  pose         String?   // standing | sitting | lying | crouching | kneeling
+  clothingTag  String?   // dressed | underwear | naked | towel | partial
+  moodFit      String[]  // ["happy", "teasing"] — 이 이미지가 어울리는 mood 후보
+  locationFit  String[]  // ["home", "bedroom"] — 이 이미지가 어울리는 location 후보
+  nsfwLevel    Int       @default(0) // 0 safe / 1 suggestive / 2 partial / 3 explicit
+  description  String?   @db.Text // 50자 이내 한글 설명 (디버깅/관리자 표시용)
+  triggerTags  String[]  // 자유 태그 — 특정 이벤트/키워드와 매칭 ("rain", "cooking")
+  createdAt    DateTime  @default(now())
+  character    Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  messages     Message[] @relation("MessageImageAsset")
 
   @@index([characterId])
+  @@index([characterId, sceneTag])
+  @@index([characterId, nsfwLevel])
 }
 
 model KnowledgeDoc {
@@ -304,15 +322,18 @@ model Session {
 }
 
 model Message {
-  id         String      @id
-  sessionId  String
-  role       MessageRole
-  content    String      @db.Text
-  tokenCount Int?
-  createdAt  DateTime    @default(now())
-  session    Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id           String      @id
+  sessionId    String
+  role         MessageRole
+  content      String      @db.Text
+  tokenCount   Int?
+  imageAssetId String?     // LLM 이 <img tags="..."/> 토큰을 낸 뒤 서버가 고른 Asset
+  createdAt    DateTime    @default(now())
+  session      Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  imageAsset   Asset?      @relation("MessageImageAsset", fields: [imageAssetId], references: [id], onDelete: SetNull)
 
   @@index([sessionId, createdAt])
+  @@index([imageAssetId])
 }
 
 model CasterRun {

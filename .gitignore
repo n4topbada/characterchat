@@ -21,3 +21,10 @@ next-env.d.ts
 
 # Prisma
 prisma/dev.db*
+
+.vercel
+
+# Source character assets (uploaded to Blob; not needed in git)
+asset/**/*.png
+asset/**/*.zip
+.env.prod

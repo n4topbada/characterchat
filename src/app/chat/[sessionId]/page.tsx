@@ -28,7 +28,14 @@ export default async function ChatPage({
           },
         },
       },
-      messages: { orderBy: { createdAt: "asc" } },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          imageAsset: {
+            select: { blobUrl: true, width: true, height: true },
+          },
+        },
+      },
     },
   });
 
@@ -47,6 +54,13 @@ export default async function ChatPage({
         role: m.role,
         content: m.content,
         createdAt: m.createdAt.toISOString(),
+        image: m.imageAsset
+          ? {
+              url: m.imageAsset.blobUrl,
+              width: m.imageAsset.width,
+              height: m.imageAsset.height,
+            }
+          : null,
       }))}
     />
   );

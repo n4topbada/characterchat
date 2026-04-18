@@ -85,6 +85,11 @@ export type ComposerContext = {
    * 맥락 연속성을 위한 세션 내부 롤링 요약.
    */
   sessionSummary?: string | null;
+  /**
+   * 이미지 에셋을 가진 캐릭터는 LLM 이 응답 중에 <img tags="..."/> 토큰을 넣을 수 있음.
+   * 서버가 이 토큰을 파싱해 가장 적합한 Asset 을 골라 SSE 로 보낸다.
+   */
+  hasImageAssets?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -253,6 +258,11 @@ function formatBlock(statusPanelSchema?: unknown | null): string {
   }
   return lines.join("\n");
 }
+
+// 이미지 선택은 <status> 블록의 outfit/location/mood 값을 서버가 직접 읽어
+// pickBestAsset() 에 전달하므로, 프롬프트에서 별도 지시문은 넣지 않는다.
+// (과거에 <img tags=".../> 인라인 토큰을 시도했으나 lite 모델이 출력을 생략해
+//  status 기반 파이프로 전환)
 
 function forbiddenBlock(core: PersonaCoreSnap): string {
   const lines = ["[금지]"];

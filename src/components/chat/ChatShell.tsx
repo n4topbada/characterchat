@@ -9,6 +9,11 @@ import { Composer } from "./Composer";
 import { StatusPanel } from "./StatusPanel";
 import { extractStatus } from "@/lib/narration";
 
+const IMG_TAG_RE_CLIENT = /<img\s+[^>]*tags\s*=\s*"[^"]+"[^>]*\/?>/gi;
+function stripImageTagsClient(s: string): string {
+  return s.replace(IMG_TAG_RE_CLIENT, "").replace(/[ \t]{2,}/g, " ").trim();
+}
+
 type Props = {
   sessionId: string;
   character: {
@@ -88,8 +93,42 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
               } catch {
                 // ignore
               }
+            } else if (event === "image") {
+              try {
+                const {
+                  url,
+                  width,
+                  height,
+                } = JSON.parse(data) as {
+                  id: string;
+                  url: string;
+                  width: number;
+                  height: number;
+                };
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === modelId
+                      ? {
+                          ...m,
+                          content: stripImageTagsClient(m.content),
+                          image: { url, width, height },
+                        }
+                      : m
+                  )
+                );
+              } catch {
+                // ignore
+              }
             } else if (event === "done") {
-              // stream complete
+              // stream complete — clean any lingering <img tags/> tokens in the
+              // accumulated buffer (서버 저장본은 이미 stripped, 클라 중간 버퍼는 남을 수 있음).
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === modelId
+                    ? { ...m, content: stripImageTagsClient(m.content) }
+                    : m
+                )
+              );
             } else if (event === "error") {
               setMessages((prev) =>
                 prev.map((m) =>
