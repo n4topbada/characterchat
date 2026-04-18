@@ -38,3 +38,31 @@ export function extractStatus(input: string): {
     return { body, status: null };
   }
 }
+
+// 모델 응답을 문단 단위로 쪼개, 각 문단이 나레이션인지 직접 발화인지 분류한다.
+// - 문단이 통째로 *...*(연속된 narration span) 만으로 이루어져 있으면 "narration"
+// - 그 외(일부라도 일반 텍스트가 섞인) 는 "dialogue"
+// 나레이션 문단의 value 는 별표를 떼고 이어붙인 순수 문장으로 돌려준다.
+export type DialogueBlock =
+  | { kind: "narration"; value: string }
+  | { kind: "dialogue"; value: string };
+
+export function splitDialogueBlocks(input: string): DialogueBlock[] {
+  const paragraphs = input
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+
+  return paragraphs.map<DialogueBlock>((p) => {
+    const segs = splitNarration(p).filter((s) => s.value.trim().length > 0);
+    const allNarration =
+      segs.length > 0 && segs.every((s) => s.kind === "narration");
+    if (allNarration) {
+      return {
+        kind: "narration",
+        value: segs.map((s) => s.value).join(" ").trim(),
+      };
+    }
+    return { kind: "dialogue", value: p };
+  });
+}

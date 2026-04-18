@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { NarrationText } from "./NarrationSpan";
-import { extractStatus } from "@/lib/narration";
+import { extractStatus, splitDialogueBlocks } from "@/lib/narration";
 
 export type ChatMessage = {
   id: string;
@@ -86,10 +86,26 @@ export function MessageBubble({
           />
         </div>
       ) : null}
-      <div className="relative bubble-receive bg-surface-container-high px-5 py-3 shadow-tinted-sm border-l-2 border-primary">
-        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words text-on-surface">
-          <NarrationText value={body} />
-        </p>
+      <div className="flex flex-col gap-2 w-full">
+        {splitDialogueBlocks(body).map((block, i) =>
+          block.kind === "narration" ? (
+            <p
+              key={i}
+              className="narration text-sm leading-relaxed whitespace-pre-wrap break-words px-2"
+            >
+              {block.value}
+            </p>
+          ) : (
+            <div
+              key={i}
+              className="relative bubble-receive bg-surface-container-high px-5 py-3 shadow-tinted-sm border-l-2 border-primary"
+            >
+              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words text-on-surface">
+                <NarrationText value={block.value} />
+              </p>
+            </div>
+          )
+        )}
       </div>
     </div>
   );
