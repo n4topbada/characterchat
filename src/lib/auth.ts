@@ -1,16 +1,17 @@
+// Node 런타임 전용 NextAuth 엔트리. API 라우트 / 서버 컴포넌트에서 사용.
+// Prisma 를 쓰는 signIn 콜백은 여기에만 둔다 — Edge 용은 auth.config.ts.
+
 import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/db";
+import { authConfig } from "@/lib/auth.config";
 
 const isDev = process.env.NODE_ENV === "development";
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
+  ...authConfig,
   providers: [
-    Google({
-      clientId: process.env.AUTH_GOOGLE_ID!,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET!,
-    }),
+    ...authConfig.providers,
     ...(isDev
       ? [
           Credentials({
@@ -28,9 +29,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         ]
       : []),
   ],
-  session: { strategy: "jwt" },
-  pages: { signIn: "/auth/signin" },
   callbacks: {
+    ...authConfig.callbacks,
     async signIn({ user, account }) {
       const id =
         account?.provider === "google"
@@ -74,13 +74,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         token.role = (user as { role: "user" | "admin" }).role;
       }
       return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.sub!;
-        session.user.role = (token.role as "user" | "admin") ?? "user";
-      }
-      return session;
     },
   },
 });
