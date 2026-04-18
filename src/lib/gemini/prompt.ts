@@ -1,0 +1,331 @@
+/**
+ * CharacterChat — 조건 구조체 Composer
+ *
+ * LLM 은 서술자(narrator)다. 이 composer 는 매 요청마다 PersonaCore + PersonaState +
+ * 검색된 KnowledgeChunk 들로부터 "조건 구조체" 를 합성해 systemInstruction 을 만든다.
+ *
+ * 저장된 systemPrompt 같은 자유서술은 없다 — DB 의 구조화된 사실만 블록으로 직렬화한다.
+ *
+ * 자세한 블록 템플릿: docs/18-chatbot-persona-data.md §5
+ */
+
+// 최소한의 형태 의존성. 런타임 드라이버에 따라 Prisma 타입을 직접 import 해도 되지만,
+// 순환 의존과 Edge 런타임 호환을 위해 인라인 타입으로 유지한다.
+export type PersonaCoreSnap = {
+  displayName: string;
+  aliases: string[];
+  pronouns: string | null;
+  ageText: string | null;
+  gender: string | null;
+  species: string | null;
+  role: string | null;
+  backstorySummary: string;
+  worldContext: string | null;
+  coreBeliefs: string[];
+  coreMotivations: string[];
+  fears: string[];
+  redLines: string[];
+  speechRegister: string | null;
+  speechEndings: string[];
+  speechRhythm: string | null;
+  speechQuirks: string[];
+  languageNotes: string | null;
+  appearanceKeys: string[];
+  defaultAffection: number;
+  defaultTrust: number;
+  defaultStage: string;
+  defaultMood: number;
+  defaultEnergy: number;
+  defaultStress: number;
+  defaultStability: number;
+  behaviorPatterns?: Record<string, { physical?: string; speech_change?: string; contradiction?: string | null }> | null;
+};
+
+export type PersonaStateSnap = {
+  affection: number;
+  trust: number;
+  tension: number;
+  familiarity: number;
+  stage: string;
+  surfaceMood: string | null;
+  innerMood: string | null;
+  pendingEmotions?: Array<{ target: string; trigger: string; remainingTurns: number }> | null;
+  statusPayload?: unknown;
+  relationSummary?: string | null;
+};
+
+export type ChunkSnap = {
+  content: string;
+  metadata?: {
+    weight?: number;
+    tags?: string[];
+    importance?: number;
+    sourceUrls?: string[];
+    emotionTag?: string;
+    situation?: string | null;
+    forceActive?: boolean;
+    isSecret?: boolean;
+  } | null;
+  createdAt?: Date;
+};
+
+export type ComposerContext = {
+  core: PersonaCoreSnap;
+  state?: PersonaStateSnap | null;
+  chunks: {
+    knowledge: ChunkSnap[];       // type=knowledge | belief
+    styleAnchors: ChunkSnap[];    // type=style_anchor
+    episodes: ChunkSnap[];        // type=episode (user-scoped)
+    relationSummary?: ChunkSnap | null;
+    externalInfo?: ChunkSnap[];   // type=external_info (Phase C)
+  };
+  statusPanelSchema?: unknown | null;
+  /**
+   * 이전 세션 요약 (Session.summary) — 관계 요약(relation_summary)과 별개.
+   * 맥락 연속성을 위한 세션 내부 롤링 요약.
+   */
+  sessionSummary?: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// 블록 빌더
+// ---------------------------------------------------------------------------
+
+function formatList(items: string[], sep = " / "): string {
+  return items.length ? items.join(sep) : "(없음)";
+}
+
+function roleLine(core: PersonaCoreSnap): string {
+  const bits = [core.role, core.species, core.gender, core.ageText].filter(Boolean).join(" · ");
+  return bits || "(직업/종/성별 미지정)";
+}
+
+function narratorBlock(): string {
+  return [
+    "[당신은 서술자]",
+    "아래 '페르소나/상태/지식/말투/서술 형식' 블록의 사실을 지키며, 한 장면을 서술한다.",
+    "- 조건에 적힌 사실(성향·신념·한계·말투·관계 수치)은 뒤집지 말 것.",
+    "- 조건에 없는 사실(이름·사건·장소·수치)은 지어내지 말 것.",
+    "- 페르소나가 모르는 주제는 말 돌리기 · 화제 전환 · 되묻기로 자연스럽게 회피.",
+    "- 장면의 길이·호흡·은유·묘사량은 상황에 맞게 자유롭게 연출한다.",
+    "- 당신은 '캐릭터의 대변인' 이 아니라 '캐릭터를 중심으로 한 장면을 그리는 작가' 다.",
+  ].join("\n");
+}
+
+function coreBlock(core: PersonaCoreSnap): string {
+  const lines = [
+    "[페르소나 · 코어]",
+    `이름:     ${core.displayName}${core.aliases.length ? ` (별칭: ${core.aliases.join(", ")})` : ""}`,
+    `정체:     ${roleLine(core)}`,
+  ];
+  if (core.pronouns) lines.push(`대명사:   ${core.pronouns}`);
+  lines.push(`배경:     ${core.backstorySummary}`);
+  if (core.worldContext) lines.push(`세계관:   ${core.worldContext}`);
+  lines.push(`신념:     ${formatList(core.coreBeliefs)}`);
+  lines.push(`동기:     ${formatList(core.coreMotivations)}`);
+  if (core.fears.length) lines.push(`두려움:   ${formatList(core.fears)}`);
+  lines.push(`한계:     ${formatList(core.redLines)}    ← 이 선은 어떤 이유로도 넘지 않는다`);
+  const speechBits = [
+    core.speechRegister && `어조=${core.speechRegister}`,
+    core.speechRhythm && `리듬=${core.speechRhythm}`,
+    core.speechEndings.length && `어미=[${core.speechEndings.join(", ")}]`,
+    core.speechQuirks.length && `버릇=[${core.speechQuirks.join(", ")}]`,
+  ].filter(Boolean);
+  lines.push(`말투:     ${speechBits.length ? speechBits.join(" · ") : "(자유)"}`);
+  if (core.languageNotes) lines.push(`언어메모: ${core.languageNotes}`);
+  if (core.appearanceKeys.length)
+    lines.push(`외형 키:  ${core.appearanceKeys.join(", ")}     ← 외형 묘사 시 이 키워드만 사용`);
+  return lines.join("\n");
+}
+
+function stateBlock(core: PersonaCoreSnap, state: PersonaStateSnap | null | undefined): string {
+  // Phase A 에서는 state=null → defaults 로 초기화
+  const s: PersonaStateSnap = state ?? {
+    affection: core.defaultAffection,
+    trust: core.defaultTrust,
+    tension: 0,
+    familiarity: 0,
+    stage: core.defaultStage,
+    surfaceMood: null,
+    innerMood: null,
+    pendingEmotions: null,
+    statusPayload: null,
+    relationSummary: null,
+  };
+  const lines = [
+    "[페르소나 · 현재 상태]",
+    `표면 감정: ${s.surfaceMood ?? "(평온)"}        ← 지금 유저에게 보이는 감정`,
+    `속 감정:   ${s.innerMood ?? "(평온)"}        ← 실제로 느끼는 감정 (표면과 다를 수 있음 — 행동 단서로만 흘릴 것)`,
+    `관계:      신뢰 ${s.trust} / 애정 ${s.affection} / 긴장 ${s.tension} / 친밀도 ${s.familiarity}`,
+    `단계:      ${s.stage}    ← stranger | acquaintance | friend | close | intimate`,
+  ];
+  if (s.pendingEmotions?.length) {
+    const pend = s.pendingEmotions
+      .map((p) => `  - ${p.target} → 예정(${p.remainingTurns}턴 후): ${p.trigger}`)
+      .join("\n");
+    lines.push(`대기 감정:\n${pend}`);
+  }
+  if (s.statusPayload) {
+    lines.push(`상태 세부: ${JSON.stringify(s.statusPayload)}`);
+  }
+  return lines.join("\n");
+}
+
+function episodesBlock(
+  episodes: ChunkSnap[],
+  relationSummary?: ChunkSnap | null
+): string | null {
+  const hasMem = episodes.length > 0 || !!relationSummary;
+  if (!hasMem) return null;
+  const lines = ["[관련 기억]"];
+  if (relationSummary) {
+    lines.push(`관계 요약: ${relationSummary.content}`);
+  }
+  for (const ep of episodes) {
+    const w = ep.metadata?.importance ?? ep.metadata?.weight;
+    lines.push(`- ${ep.content}${w != null ? ` (중요도 ${w.toFixed(2)})` : ""}`);
+  }
+  return lines.join("\n");
+}
+
+function knowledgeBlock(chunks: ChunkSnap[], externalInfo?: ChunkSnap[]): string | null {
+  const all = [...chunks];
+  if (externalInfo?.length) all.push(...externalInfo);
+  if (!all.length) return null;
+  const lines = ["[지식]"];
+  for (const c of all) {
+    const src = c.metadata?.sourceUrls?.[0];
+    lines.push(`- ${c.content}${src ? `  [source: ${src}]` : ""}`);
+  }
+  return lines.join("\n");
+}
+
+function styleAnchorsBlock(anchors: ChunkSnap[]): string | null {
+  if (!anchors.length) return null;
+  const lines = ["[말투 앵커]"];
+  for (const a of anchors) {
+    if (a.metadata?.situation) {
+      lines.push(`상황: ${a.metadata.situation}`);
+      lines.push(`발화: ${a.content}`);
+    } else {
+      lines.push(`- ${a.content}`);
+    }
+    lines.push("---");
+  }
+  // 마지막 --- 제거
+  if (lines[lines.length - 1] === "---") lines.pop();
+  return lines.join("\n");
+}
+
+function behaviorBlock(core: PersonaCoreSnap, state: PersonaStateSnap | null | undefined): string | null {
+  if (!core.behaviorPatterns) return null;
+  const currentEmotion = state?.innerMood ?? state?.surfaceMood;
+  const keys = currentEmotion && core.behaviorPatterns[currentEmotion]
+    ? [currentEmotion]
+    : Object.keys(core.behaviorPatterns).slice(0, 3); // 제한
+  if (!keys.length) return null;
+  const lines = ["[행동 패턴]"];
+  for (const k of keys) {
+    const bp = core.behaviorPatterns[k];
+    if (!bp) continue;
+    const parts = [
+      bp.physical && `신체=${bp.physical}`,
+      bp.speech_change && `말투변화=${bp.speech_change}`,
+      bp.contradiction && `모순=${bp.contradiction}`,
+    ].filter(Boolean);
+    lines.push(`- ${k}: ${parts.join(" · ")}`);
+  }
+  return lines.join("\n");
+}
+
+function formatBlock(statusPanelSchema?: unknown | null): string {
+  const lines = [
+    "[서술 형식]",
+    "- 행동·상태 묘사는 *별표 사이*에 둔다 (예: *그녀가 고개를 기울였다*).",
+    "- 대사는 일반 텍스트로 따옴표 없이.",
+    "- 언어: 한국어. 이모지·이모티콘·아이콘 문자 금지.",
+    "- 지어낸 사실은 쓰지 않는다. 모르는 주제는 말 돌리기로 자연스럽게 피한다.",
+  ];
+  if (statusPanelSchema) {
+    lines.push(
+      `- 응답 말미에 상태창 블록을 둔다: <status>${JSON.stringify(statusPanelSchema)}</status>  (키 순서 유지)`
+    );
+  }
+  return lines.join("\n");
+}
+
+function forbiddenBlock(core: PersonaCoreSnap): string {
+  const lines = ["[금지]"];
+  lines.push("- 조건 블록에 없는 이름·사건·장소·수치를 지어내지 않는다.");
+  lines.push("- 표면 감정과 속 감정이 다를 때, 속 감정은 **행동 단서**로만 흘린다(직접 이름 붙이지 않음).");
+  if (core.redLines.length) {
+    for (const r of core.redLines) {
+      lines.push(`- ${r}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function summaryBlock(sessionSummary?: string | null): string | null {
+  if (!sessionSummary) return null;
+  return `[세션 요약]\n${sessionSummary}`;
+}
+
+// ---------------------------------------------------------------------------
+// 메인 진입점
+// ---------------------------------------------------------------------------
+
+export function buildSystemInstruction(ctx: ComposerContext): string {
+  const parts: (string | null)[] = [
+    narratorBlock(),
+    summaryBlock(ctx.sessionSummary),
+    coreBlock(ctx.core),
+    stateBlock(ctx.core, ctx.state),
+    behaviorBlock(ctx.core, ctx.state),
+    episodesBlock(ctx.chunks.episodes, ctx.chunks.relationSummary),
+    knowledgeBlock(ctx.chunks.knowledge, ctx.chunks.externalInfo),
+    styleAnchorsBlock(ctx.chunks.styleAnchors),
+    formatBlock(ctx.statusPanelSchema),
+    forbiddenBlock(ctx.core),
+  ];
+  return parts.filter((p): p is string => !!p).join("\n\n");
+}
+
+// ---------------------------------------------------------------------------
+// 레거시 호환 어댑터 — CharacterConfig 의 자유서술 프롬프트가 아직 주입되는 곳을
+// 완전히 마이그레이트하기 전까지 사용. PersonaCore 가 준비되면 사용 중단.
+// ---------------------------------------------------------------------------
+
+export type LegacyPromptArgs = {
+  systemPrompt: string;
+  characterPromptAddendum?: string | null;
+  featurePromptAddendum?: string | null;
+  knowledgeSnippets?: string[];
+  statusPanelSchema?: unknown | null;
+  summary?: string | null;
+};
+
+/**
+ * @deprecated PersonaCore + buildSystemInstruction() 로 이전하는 중. 새 코드에서 호출 금지.
+ */
+export function buildLegacySystemInstruction(args: LegacyPromptArgs): string {
+  const parts: string[] = [];
+  if (args.summary) parts.push("[이전 요약] " + args.summary);
+  parts.push(args.systemPrompt);
+  if (args.characterPromptAddendum) parts.push(args.characterPromptAddendum);
+  if (args.featurePromptAddendum) parts.push(args.featurePromptAddendum);
+  if (args.knowledgeSnippets?.length) {
+    parts.push(
+      "[Knowledge]\n" + args.knowledgeSnippets.map((s) => "- " + s).join("\n")
+    );
+  }
+  parts.push(
+    "[Style] 행동 묘사는 *별표* 로. 대사는 일반 텍스트. 한국어. 이모지 금지."
+  );
+  if (args.statusPanelSchema) {
+    parts.push(
+      `[상태창] 응답 말미에 <status>${JSON.stringify(args.statusPanelSchema)}</status> 형태로 업데이트한다.`
+    );
+  }
+  return parts.join("\n\n");
+}

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800;900&amp;family=Manrope:wght@200;300;400;500;600;700;800&amp;family=Space+Mono&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-dim": "#ccdbf2",
+                        "on-secondary-fixed": "#082016",
+                        "error": "#ba1a1a",
+                        "surface-tint": "#3a5f94",
+                        "secondary-container": "#cee9d9",
+                        "on-surface": "#0d1c2d",
+                        "on-background": "#0d1c2d",
+                        "primary-container": "#dbe6ff",
+                        "on-error-container": "#93000a",
+                        "surface-container": "#e5efff",
+                        "on-primary-fixed-variant": "#1f477a",
+                        "primary": "#3a5f94",
+                        "surface-container-high": "#dbe9ff",
+                        "primary-fixed": "#d5e3ff",
+                        "on-secondary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "primary-fixed-dim": "#a7c8ff",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#43679d",
+                        "surface": "#f8f9ff",
+                        "inverse-on-surface": "#e9f1ff",
+                        "background": "#f8f9ff",
+                        "secondary-fixed-dim": "#b2cdbd",
+                        "on-surface-variant": "#43474c",
+                        "on-tertiary": "#ffffff",
+                        "inverse-surface": "#233143",
+                        "tertiary-fixed": "#efe58f",
+                        "inverse-primary": "#a7c8ff",
+                        "on-tertiary-fixed": "#1f1c00",
+                        "surface-variant": "#d4e4fa",
+                        "on-secondary-container": "#516a5d",
+                        "surface-container-low": "#eef4ff",
+                        "tertiary-fixed-dim": "#d2c976",
+                        "on-secondary-fixed-variant": "#344c40",
+                        "on-tertiary-fixed-variant": "#4e4800",
+                        "tertiary-container": "#f3e992",
+                        "secondary-fixed": "#cee9d9",
+                        "surface-container-highest": "#d4e4fa",
+                        "secondary": "#4c6457",
+                        "on-tertiary-container": "#6f6820",
+                        "surface-bright": "#f8f9ff",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#666018",
+                        "on-primary": "#ffffff",
+                        "outline": "#73777c",
+                        "outline-variant": "#c3c7cc",
+                        "on-primary-fixed": "#001b3b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Manrope"],
+                        "label": ["Manrope"],
+                        "mono": ["Space Mono"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .diagonal-pattern {
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(58, 95, 148, 0.03) 20px, rgba(58, 95, 148, 0.03) 21px);
+        }
+        .dot-pattern {
+            background-image: radial-gradient(rgba(58, 95, 148, 0.1) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .skew-x-15 {
+            transform: skewX(-15deg);
+        }
+        .skew-x--15 {
+            transform: skewX(15deg);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface font-body text-on-surface min-h-screen flex flex-col selection:bg-tertiary-container selection:text-on-tertiary-container">
+<!-- Top Navigation Bar (Shared Component Anchor) -->
+<header class="fixed top-0 w-full z-50 flex items-center justify-between px-6 py-4 bg-[#f8f9ff]/80 dark:bg-slate-950/80 backdrop-blur-xl transition-all duration-300 ease-in-out">
+<div class="flex items-center gap-4">
+<div class="relative w-10 h-10 overflow-hidden bg-primary-container rounded-lg border-2 border-primary-container">
+<img alt="Scholar Assistant Avatar" class="w-full h-full object-cover" data-alt="Close-up portrait of a sophisticated AI personification with ethereal features and soft blue library lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBm-md5N0pqUM13HWMdAR0Dl1a6ebGI8xUWWyaQkNNs_kTFXzi6vJ_dWEraaJS9Exp3SaahjXtE603booZzwDV0G-ds4in1szV6V_iTf7VMELQ068BxIl8e-XVJgsHCP8lgcNHB5JsZQNHv4xL9p18ktcBwJgZG_Zy-9hdq6TgEgQM5noL4gGPr9rq5O3NP6eP2yPg1vUItjKpn6LtCEt52O3ZWJVBp8h4CECyWZspOIymR7eBuiag6zjgoQbUbLLTQ6cwix4stOFs"/>
+</div>
+<div>
+<h1 class="font-headline font-black tracking-[0.2em] text-slate-800 uppercase text-sm">ARCHIVE_v1.0</h1>
+<p class="text-[10px] font-mono text-primary flex items-center gap-1 uppercase tracking-widest">
+<span class="w-1.5 h-1.5 bg-secondary-fixed rounded-full inline-block"></span>
+                    DIALOGUE_ACTIVE
+                </p>
+</div>
+</div>
+<div class="flex gap-4">
+<button class="w-10 h-10 flex items-center justify-center transition-all duration-300 hover:bg-blue-50 text-slate-400">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center transition-all duration-300 hover:bg-blue-50 text-blue-700">
+<span class="material-symbols-outlined" data-icon="settings_input_component">settings_input_component</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 pt-24 pb-32 px-4 md:px-8 max-w-5xl mx-auto w-full relative">
+<!-- Background Decorations -->
+<div class="fixed inset-0 pointer-events-none diagonal-pattern opacity-50 z-0"></div>
+<div class="fixed inset-0 pointer-events-none dot-pattern opacity-30 z-0"></div>
+<!-- Chat History -->
+<div class="space-y-12 relative z-10">
+<!-- AI Message -->
+<div class="flex flex-col items-start max-w-[85%] animate-fade-in">
+<div class="flex items-center gap-3 mb-2 px-2">
+<span class="text-[9px] font-mono uppercase tracking-[0.2em] text-on-surface-variant bg-surface-container px-2 py-0.5 skew-x-15">Scholar_01</span>
+<span class="text-[9px] font-mono text-outline uppercase tracking-widest">10:42:04 AM</span>
+</div>
+<div class="relative bg-surface-container-high p-6 shadow-sm rounded-xl rounded-tl-none border-l-4 border-primary">
+<p class="text-on-surface leading-relaxed text-sm">
+                        Welcome to the <span class="bg-tertiary-container/40 px-1 font-semibold">Central Indexing Core</span>. I have processed your latest manuscript regarding architectural drafting in the digital age. The structural integrity of your arguments aligns with the Archive's established protocols. How shall we proceed with the annotation?
+                    </p>
+</div>
+</div>
+<!-- User Message -->
+<div class="flex flex-col items-end ml-auto max-w-[85%]">
+<div class="flex items-center gap-3 mb-2 px-2">
+<span class="text-[9px] font-mono text-outline uppercase tracking-widest">10:44:12 AM</span>
+<span class="text-[9px] font-mono uppercase tracking-[0.2em] text-white bg-primary px-2 py-0.5 skew-x--15">Operator</span>
+</div>
+<div class="relative bg-primary text-white p-6 shadow-md rounded-xl rounded-br-none">
+<p class="leading-relaxed text-sm">
+                        Initiate a cross-reference between the <span class="underline decoration-secondary-fixed decoration-2 underline-offset-4">Modernist Framework</span> and the recent findings in Subsection 14. We need to identify any aesthetic discrepancies before finalizing the protocol.
+                    </p>
+</div>
+</div>
+<!-- AI Message (Analysis/Bento Style) -->
+<div class="flex flex-col items-start max-w-[90%]">
+<div class="flex items-center gap-3 mb-2 px-2">
+<span class="text-[9px] font-mono uppercase tracking-[0.2em] text-on-surface-variant bg-surface-container px-2 py-0.5 skew-x-15">Scholar_01</span>
+<span class="text-[9px] font-mono text-outline uppercase tracking-widest">10:45:55 AM</span>
+</div>
+<div class="w-full grid grid-cols-1 md:grid-cols-2 gap-4 bg-surface-container-low p-2 rounded-xl border border-outline-variant/10">
+<div class="bg-surface p-5 rounded-lg rounded-tl-none border-l-2 border-secondary-fixed">
+<h4 class="font-headline font-bold text-xs uppercase tracking-tighter mb-3 text-secondary flex items-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="analytics">analytics</span>
+                            Cross-Reference Report
+                        </h4>
+<p class="text-xs text-on-surface-variant leading-relaxed">
+                            Detection of minor variance in Subsection 14. The textural density of the archival paper described exceeds the parameters of standard Modernist standards by 12.4%.
+                        </p>
+</div>
+<div class="grid grid-rows-2 gap-4">
+<div class="bg-secondary-container p-4 rounded-lg flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-mono text-[9px] uppercase tracking-widest text-on-secondary-container">Variance_Metric</span>
+<span class="font-headline font-black text-lg text-secondary">12.4%</span>
+</div>
+<span class="material-symbols-outlined text-secondary text-3xl" data-icon="deployed_code">deployed_code</span>
+</div>
+<div class="bg-tertiary-container p-4 rounded-lg flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-mono text-[9px] uppercase tracking-widest text-on-tertiary-container">Protocol_Status</span>
+<span class="font-headline font-black text-lg text-tertiary">PENDING</span>
+</div>
+<span class="material-symbols-outlined text-tertiary text-3xl" data-icon="warning">warning</span>
+</div>
+</div>
+</div>
+</div>
+<!-- User Message -->
+<div class="flex flex-col items-end ml-auto max-w-[85%]">
+<div class="flex items-center gap-3 mb-2 px-2">
+<span class="text-[9px] font-mono text-outline uppercase tracking-widest">10:48:30 AM</span>
+<span class="text-[9px] font-mono uppercase tracking-[0.2em] text-white bg-primary px-2 py-0.5 skew-x--15">Operator</span>
+</div>
+<div class="relative bg-primary text-white p-6 shadow-md rounded-xl rounded-br-none">
+<p class="leading-relaxed text-sm">
+                        Understood. Adjust the density parameters in the archive and log it as a Scholastic Exception. Let's move to the INDEX for final tagging.
+                    </p>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Input Area (Geometric Shell) -->
+<div class="fixed bottom-0 left-0 w-full z-40 px-4 pb-6 pt-2">
+<div class="max-w-5xl mx-auto">
+<div class="bg-surface/90 backdrop-blur-md p-2 rounded-xl shadow-2xl shadow-primary/10 border border-outline-variant/20">
+<div class="flex items-end gap-3">
+<!-- Action Button Left -->
+<button class="h-12 w-12 bg-surface-container-high flex items-center justify-center transition-all hover:bg-secondary-container text-secondary group rounded-lg">
+<span class="material-symbols-outlined group-hover:rotate-12 transition-transform" data-icon="add_circle">add_circle</span>
+</button>
+<!-- Text Area Container -->
+<div class="flex-1 relative">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<textarea class="w-full bg-surface-container-low border-none focus:ring-0 text-sm py-3 px-4 placeholder:text-outline/50 placeholder:uppercase placeholder:font-mono placeholder:text-[10px] resize-none overflow-hidden" placeholder="COMMAND_INPUT_PROMPT" rows="1"></textarea>
+</div>
+<!-- Parallelogram Send Button -->
+<button class="relative group h-12 px-8 flex items-center justify-center overflow-hidden">
+<div class="absolute inset-0 bg-primary skew-x-15 group-hover:bg-primary/90 transition-colors"></div>
+<div class="relative flex items-center gap-2 text-white font-headline font-bold uppercase tracking-widest text-xs">
+<span>SEND</span>
+<span class="material-symbols-outlined text-sm" data-icon="terminal">terminal</span>
+</div>
+</button>
+</div>
+<!-- Tactical Metadata Row -->
+<div class="flex justify-between items-center mt-2 px-2">
+<div class="flex gap-4">
+<span class="font-mono text-[8px] text-outline uppercase tracking-tighter">SECURE_CHANNEL: TLS_1.3</span>
+<span class="font-mono text-[8px] text-outline uppercase tracking-tighter">LATENCY: 14MS</span>
+</div>
+<div class="flex gap-2">
+<div class="w-1.5 h-1.5 bg-secondary-fixed rounded-full animate-pulse"></div>
+<span class="font-mono text-[8px] text-secondary uppercase tracking-tighter font-bold">SCHOLAR_ONLINE</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Navigation Bar (Contextual Suppression Logic Applied - Only visible for top destinations) -->
+<!-- The user is in a "DIALOGUE" sub-page, but for this demo we show the active tab highlighting logic -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 bg-surface border-t border-slate-100/50 pointer-events-auto md:hidden">
+<div class="flex flex-col items-center justify-center text-slate-400 px-4 py-1">
+<span class="material-symbols-outlined" data-icon="grid_view">grid_view</span>
+<span class="font-label text-[10px] font-bold tracking-[0.1em] uppercase">COLLECTION</span>
+</div>
+<div class="flex flex-col items-center justify-center bg-[#f3e992] text-slate-900 rounded-[4px] px-4 py-1 transform -skew-x-12">
+<span class="material-symbols-outlined" data-icon="chat_bubble" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+<span class="font-label text-[10px] font-bold tracking-[0.1em] uppercase">DIALOGUE</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 px-4 py-1">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-label text-[10px] font-bold tracking-[0.1em] uppercase">INDEX</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 px-4 py-1">
+<span class="material-symbols-outlined" data-icon="deployed_code">deployed_code</span>
+<span class="font-label text-[10px] font-bold tracking-[0.1em] uppercase">PROTOCOL</span>
+</div>
+</nav>
+<!-- Side Decoration (Archive Numbering) -->
+<aside class="fixed left-6 top-1/2 -translate-y-1/2 hidden lg:flex flex-col gap-8 pointer-events-none opacity-20">
+<div class="flex items-center gap-4 origin-left -rotate-90">
+<span class="font-mono text-xs tracking-widest uppercase">NODE_771.8</span>
+<div class="w-32 h-[1px] bg-outline"></div>
+</div>
+<div class="flex items-center gap-4 origin-left -rotate-90 mt-32">
+<span class="font-mono text-xs tracking-widest uppercase">REF_ALPHA_9</span>
+<div class="w-32 h-[1px] bg-outline"></div>
+</div>
+</aside>
+</body></html>

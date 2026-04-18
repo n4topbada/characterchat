@@ -1,0 +1,342 @@
+// CharacterChat — Prisma schema
+// pgvector의 embedding 컬럼은 0002_pgvector 마이그레이션(raw SQL)에서 추가한다.
+// PersonaCore / PersonaState / ChunkType 확장은 0003_persona 마이그레이션(raw SQL)에서 추가한다.
+// Prisma 레벨에서는 벡터 컬럼이 없다는 전제로 모든 읽기/쓰기는 $queryRaw 를 통한다.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+enum Role {
+  user
+  admin
+}
+
+enum AssetKind {
+  portrait
+  hero
+  gallery
+}
+
+enum KnowledgeSource {
+  caster
+  admin_research
+  admin_edit
+  runtime_extraction
+}
+
+// KnowledgeChunk 의 의미 구분자.
+// knowledge         : 사실/배경 정보 (정적 RAG)
+// style_anchor      : 말투 표본 — 실제 발화 샘플 또는 패턴
+// episode           : 과거 사건 서술 — 캐릭터가 경험한 장면
+// belief            : 가치관/신념/원칙
+// relation_summary  : 특정 유저와의 관계 롤링 요약 (session.summary 와 상호보완)
+// external_info     : Caster 가 생성 후 관리자가 편집 가능한 외부 출처 요약
+enum ChunkType {
+  knowledge
+  style_anchor
+  episode
+  belief
+  relation_summary
+  external_info
+}
+
+enum MessageRole {
+  user
+  model
+  system
+  tool
+}
+
+enum CasterStatus {
+  running
+  draft_ready
+  saved
+  cancelled
+  error
+}
+
+enum RelationshipStage {
+  stranger
+  acquaintance
+  friend
+  close
+  intimate
+}
+
+model User {
+  id            String         @id // providerAccountId(Google sub) 또는 dev-admin
+  email         String         @unique
+  name          String?
+  image         String?
+  role          Role           @default(user)
+  createdAt     DateTime       @default(now())
+  sessions      Session[]
+  casterRuns    CasterRun[]
+  personaStates PersonaState[]
+}
+
+// StoryGatcha의 admin_config/default 도큐먼트 대체.
+model AdminConfig {
+  id          String   @id @default("default")
+  adminEmails String[]
+  updatedAt   DateTime @updatedAt
+}
+
+model Character {
+  id              String           @id
+  slug            String           @unique
+  name            String
+  tagline         String
+  accentColor     String
+  portraitAssetId String?
+  heroAssetId     String?
+  isPublic        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  config          CharacterConfig?
+  personaCore     PersonaCore?
+  personaStates   PersonaState[]
+  assets          Asset[]
+  knowledgeDocs   KnowledgeDoc[]
+  knowledgeChunks KnowledgeChunk[]
+  sessions        Session[]
+  eventTemplates  EventTypeTemplate[]
+}
+
+// LLM 런타임 설정. 생성 파라미터와 안전 설정만 보관한다.
+// 과거의 systemPrompt/characterPromptAddendum/featurePromptAddendum 필드는 제거되었다.
+// 시스템 프롬프트는 PersonaCore + (runtime에 계산된) PersonaState + 검색된 KnowledgeChunk 로부터
+// src/lib/gemini/prompt.ts 의 composer 가 매 요청마다 합성한다.
+model CharacterConfig {
+  id                String    @id
+  characterId       String    @unique
+  model             String
+  temperature       Float     @default(0.8)
+  topP              Float?
+  topK              Int?
+  maxOutputTokens   Int       @default(1024)
+  greeting          String    @db.Text
+  statusPanelSchema Json?
+  safetyJson        Json?
+  updatedAt         DateTime  @updatedAt
+  character         Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+}
+
+// 캐릭터의 "불변" 페르소나. 1 Character = 1 PersonaCore.
+// 모든 유저/세션에서 공통으로 적용된다. Caster commit 시 생성되며, 이후 관리자만 수정 가능.
+model PersonaCore {
+  id                String   @id
+  characterId       String   @unique
+  // 정체성
+  displayName       String
+  aliases           String[]
+  pronouns          String?
+  ageText           String?  // "23세" 또는 "영원" 등 서사적 표현도 허용 → 문자열
+  gender            String?
+  species           String?  // 인간/엘프/AI/인외 등 — 자유 태그
+  role              String?  // 직업 / 위치 / 역할
+  // 서사
+  backstorySummary  String   @db.Text
+  worldContext      String?  @db.Text   // 세계관/시대/배경 요약
+  // 성격 / 가치관
+  coreBeliefs       String[] // 핵심 신념 — 조건 구조에 직접 주입
+  coreMotivations   String[]
+  fears             String[]
+  redLines          String[] // 절대 말하지 않는 것 / 절대 하지 않는 행위
+  // 말투 — 여기서 문자열로 기술하면 prompt composer 가 condition-struct 로 옮긴다
+  speechRegister    String?  // "반말/존댓말 혼용", "나직한 존댓말" 등
+  speechEndings     String[] // 자주 쓰는 어미 / 문장 끝 패턴
+  speechRhythm      String?  // "짧게 끊어 말함", "긴 호흡" 등
+  speechQuirks      String[] // 말버릇 / 반복되는 표현
+  languageNotes     String?  @db.Text
+  // 외형 단서 — 포트레이트와 별개로 LLM 이 묘사할 때 쓰는 키 포인트
+  appearanceKeys    String[] // "회색 눈", "왼쪽 뺨의 흉터" 등
+  // 관계 기본값 — 유저와의 관계가 처음 시작될 때의 상태
+  defaultAffection  Int      @default(0)   // -100 ~ +100
+  defaultTrust      Int      @default(0)   // -100 ~ +100
+  defaultStage      RelationshipStage @default(stranger)
+  // 감정 초깃값 (PersonaState 초기화용)
+  defaultMood       Float    @default(0.0)
+  defaultEnergy     Float    @default(0.7)
+  defaultStress     Float    @default(0.3)
+  defaultStability  Float    @default(0.7)
+  // 룰 엔진 감수성 계수 (0~2). rule engine 의 수치 변화에 곱해진다.
+  trustSensitivity     Float @default(1.0)
+  sentimentSensitivity Float @default(1.0)
+  stressSensitivity    Float @default(1.0)
+  moodSensitivity      Float @default(1.0)
+  // 감정 처리 (Phase B 의 감정 딜레이)
+  emotionalProcessingSpeed Int   @default(2)   // N턴 뒤 표면→내면 전이
+  emotionalVolatility      Float @default(0.5) // 0~1, 감정 변화의 폭
+  // 감정별 행동 패턴. Json: { joy:{physical,speech_change,contradiction?}, anger:{...}, ... }
+  behaviorPatterns  Json?
+  // 메타
+  version           Int      @default(1)
+  updatedAt         DateTime @updatedAt
+  character         Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+}
+
+// (user, character) 당 1개. 유저마다 따로 누적되는 "관계/상태".
+// 매 메시지 이후 rule engine 과 LLM 분석(Phase B) 이 갱신한다.
+model PersonaState {
+  id                 String   @id
+  userId             String
+  characterId        String
+  // 관계 수치
+  affection          Int      @default(0)    // -100 ~ +100
+  trust              Int      @default(0)    // -100 ~ +100
+  tension            Int      @default(0)    // 0 ~ 100 (긴장도)
+  familiarity        Int      @default(0)    // 0 ~ 100 (친밀도/함께한 시간)
+  stage              RelationshipStage @default(stranger)
+  // 현재 감정 — 표면/내면 분리 (Phase B 의 감정 딜레이)
+  surfaceMood        String?  // 겉으로 보이는 감정 — 즉시 변함
+  innerMood          String?  // 속으로 느끼는 감정 — 서서히 변함
+  // 대기 중인 감정 전이. { fromMood, toMood, pendingTurns } 의 배열.
+  // rule engine 이 트리거 조건(예: trust>50 && affection>30)을 만족할 때까지 보류.
+  pendingEmotions    Json?    // Array<{ target:string, trigger:string, remainingTurns:number }>
+  // 자유 서술 상태 — LLM 이 상태창 스키마에 맞춰 갱신한 구조화 상태
+  statusPayload      Json?
+  // 롤링 요약 — Session.summary 와 분리: 여기는 "관계" 관점
+  relationSummary    String?  @db.Text
+  lastSnapshotAt     DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character          Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, characterId])
+  @@index([characterId])
+}
+
+// Caster 가 기술하는 "이 캐릭터에게 가능한 사건의 형틀".
+// 예: "대학생 친구이므로 시험/과제/동아리 이벤트가 가능하다".
+// rule engine 또는 LLM 이 이 템플릿을 참고하여 자연스러운 이벤트를 유발할 수 있다.
+model EventTypeTemplate {
+  id           String   @id
+  characterId  String
+  key          String   // 'exam_stress' 등 snake_case
+  label        String
+  description  String   @db.Text
+  triggers     Json?    // 발동 조건 힌트 (시간, 관계 수치, 확률 등)
+  stateDelta   Json?    // 발생 시 PersonaState 변화 제안
+  createdAt    DateTime @default(now())
+  character    Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, key])
+  @@index([characterId])
+}
+
+model Asset {
+  id          String    @id
+  characterId String
+  kind        AssetKind
+  blobUrl     String
+  mimeType    String
+  width       Int
+  height      Int
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([characterId])
+}
+
+model KnowledgeDoc {
+  id          String           @id
+  characterId String
+  title       String
+  source      KnowledgeSource
+  rawText     String           @db.Text
+  sourceUrls  String[]
+  createdAt   DateTime         @default(now())
+  chunks      KnowledgeChunk[]
+  character   Character        @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([characterId])
+}
+
+// NOTE: embedding vector(768) 컬럼은 0002_pgvector/migration.sql 에서 추가된다.
+// type / userId / sessionId / metadata / ttlDays 확장은 0003_persona/migration.sql 에서 추가된다.
+// Prisma 는 embedding 컬럼을 모르며, 모든 검색은 raw SQL 사용.
+model KnowledgeChunk {
+  id          String       @id
+  docId       String?      // episode/relation_summary 는 독립 생성되므로 null 허용
+  characterId String
+  userId      String?      // episode / relation_summary / external_info(user-specific) 일 때 귀속 유저
+  sessionId   String?      // episode 가 특정 세션의 장면일 때
+  type        ChunkType    @default(knowledge)
+  ordinal     Int          @default(0)
+  content     String       @db.Text
+  tokens      Int
+  // 가중치·태그·감쇠 파라미터. rule engine 이 해석.
+  // 권장 필드: { weight:number, tags:string[], decayHalfLifeDays:number, lastAccessedAt:ISO }
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  doc         KnowledgeDoc? @relation(fields: [docId], references: [id], onDelete: Cascade)
+  character   Character    @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([characterId, type])
+  @@index([characterId, userId, type])
+  @@index([sessionId])
+  @@index([docId, ordinal])
+}
+
+model Session {
+  id            String    @id
+  userId        String
+  characterId   String
+  createdAt     DateTime  @default(now())
+  lastMessageAt DateTime  @default(now())
+  summary       String?   @db.Text
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@unique([userId, characterId]) // 핵심 불변식: 1 (user, character) = 1 session
+  @@index([userId, lastMessageAt])
+}
+
+model Message {
+  id         String      @id
+  sessionId  String
+  role       MessageRole
+  content    String      @db.Text
+  tokenCount Int?
+  createdAt  DateTime    @default(now())
+  session    Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+model CasterRun {
+  id               String        @id
+  adminUserId      String
+  status           CasterStatus  @default(running)
+  startedAt        DateTime      @default(now())
+  endedAt          DateTime?
+  draftJson        Json?
+  coverage         Json?         // { score:number, components:{...} }
+  savedCharacterId String?
+  user             User          @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  events           CasterEvent[]
+
+  @@index([adminUserId, startedAt])
+}
+
+model CasterEvent {
+  id        String    @id
+  runId     String
+  kind      String // user_msg | model_msg | tool_call | tool_result | coverage_state | coverage_ready
+  payload   Json
+  createdAt DateTime  @default(now())
+  run       CasterRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
+}

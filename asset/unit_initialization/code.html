@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Unit Initialization - Scholastic Archive</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Manrope:wght@300;400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .dot-pattern {
+            background-image: radial-gradient(circle, #d4e4fa 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .parallelogram {
+            clip-path: polygon(5% 0%, 100% 0%, 95% 100%, 0% 100%);
+        }
+        .slant-edge {
+            clip-path: polygon(0 0, 100% 0, 92% 100%, 0% 100%);
+        }
+        .technical-mono {
+            font-family: 'IBM+Plex+Mono', monospace;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-dim": "#ccdbf2",
+                      "on-secondary-fixed": "#082016",
+                      "error": "#ba1a1a",
+                      "surface-tint": "#3a5f94",
+                      "secondary-container": "#cee9d9",
+                      "on-surface": "#0d1c2d",
+                      "on-background": "#0d1c2d",
+                      "primary-container": "#dbe6ff",
+                      "on-error-container": "#93000a",
+                      "surface-container": "#e5efff",
+                      "on-primary-fixed-variant": "#1f477a",
+                      "primary": "#3a5f94",
+                      "surface-container-high": "#dbe9ff",
+                      "primary-fixed": "#d5e3ff",
+                      "on-secondary": "#ffffff",
+                      "on-error": "#ffffff",
+                      "primary-fixed-dim": "#a7c8ff",
+                      "surface-container-lowest": "#ffffff",
+                      "on-primary-container": "#43679d",
+                      "surface": "#f8f9ff",
+                      "inverse-on-surface": "#e9f1ff",
+                      "background": "#f8f9ff",
+                      "secondary-fixed-dim": "#b2cdbd",
+                      "on-surface-variant": "#43474c",
+                      "on-tertiary": "#ffffff",
+                      "inverse-surface": "#233143",
+                      "tertiary-fixed": "#efe58f",
+                      "inverse-primary": "#a7c8ff",
+                      "on-tertiary-fixed": "#1f1c00",
+                      "surface-variant": "#d4e4fa",
+                      "on-secondary-container": "#516a5d",
+                      "surface-container-low": "#eef4ff",
+                      "tertiary-fixed-dim": "#d2c976",
+                      "on-secondary-fixed-variant": "#344c40",
+                      "on-tertiary-fixed-variant": "#4e4800",
+                      "tertiary-container": "#f3e992",
+                      "secondary-fixed": "#cee9d9",
+                      "surface-container-highest": "#d4e4fa",
+                      "secondary": "#4c6457",
+                      "on-tertiary-container": "#6f6820",
+                      "surface-bright": "#f8f9ff",
+                      "error-container": "#ffdad6",
+                      "tertiary": "#666018",
+                      "on-primary": "#ffffff",
+                      "outline": "#73777c",
+                      "outline-variant": "#c3c7cc",
+                      "on-primary-fixed": "#001b3b"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "fontFamily": {
+                      "headline": ["Space Grotesk"],
+                      "body": ["Manrope"],
+                      "label": ["Manrope"]
+              }
+            },
+          },
+        }
+      </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface font-body text-on-surface antialiased dot-pattern min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 flex items-center justify-between px-6 py-4 bg-[#f8f9ff]/80 backdrop-blur-xl">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-variant flex items-center justify-center border-l-4 border-primary">
+<span class="material-symbols-outlined text-primary" data-icon="school">school</span>
+</div>
+<h1 class="font-['Space_Grotesk'] font-bold tracking-tighter uppercase text-lg font-black tracking-[0.2em] text-slate-800">ARCHIVE_v1.0</h1>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center transition-all duration-300 ease-in-out hover:bg-blue-50 text-slate-400">
+<span class="material-symbols-outlined" data-icon="settings_input_component">settings_input_component</span>
+</button>
+<div class="w-10 h-10 bg-primary rounded-sm flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover opacity-90" data-alt="portrait of a focused scholar wearing academic glasses in a brightly lit library setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDyVEK9SIyWTlonVly0K76ePUx4uPyeRFnWhwjh-hhn4PqUdCr6GDKR4T0Fe_ZNVUPr0PoENxM3HRjsKbCzDs9XdbvgJy0p8hCBK1T7H0KUfraQPvoO3u7UfjueLesnC_dVXBBF4cmiv4b8zE_ZbzXCgcQN__IsuMkPMZcrpCslo9kpzXTpdx9HgoRzeUJpDdAxmFjb_RA8rHiSXDKtkH-Tfqm-o84pqzwgf483XXJ4z-0ns8Ac20KgcWlcQoKqnlcp35Tf8g6_UmQ"/>
+</div>
+</div>
+</header>
+<main class="pt-24 px-6 max-w-5xl mx-auto">
+<!-- Hero Section: Unit Initialization -->
+<section class="grid grid-cols-1 md:grid-cols-12 gap-8 mb-12">
+<div class="md:col-span-7 flex flex-col justify-center">
+<div class="inline-block px-3 py-1 bg-tertiary-container text-on-tertiary-container text-[10px] font-bold tracking-[0.2em] uppercase mb-4 w-fit">
+                    System Protocol: 0x82A
+                </div>
+<h2 class="font-headline text-5xl md:text-6xl font-bold text-on-surface-variant leading-none tracking-tighter mb-6">
+                    UNIT <span class="text-primary">INITIALIZATION</span>
+</h2>
+<p class="technical-mono text-sm text-on-surface-variant/80 max-w-md leading-relaxed">
+                    &gt; Preparing neural architecture for scholastic engagement.
+                    <br/>&gt; Defining cognitive constraints and personality matrices.
+                    <br/>&gt; Ready for sequence deployment.
+                </p>
+</div>
+<div class="md:col-span-5 relative">
+<div class="aspect-square bg-surface-container-high p-4 relative overflow-hidden">
+<!-- Geometric Frame Decoration -->
+<div class="absolute inset-0 opacity-10 pointer-events-none">
+<div class="absolute top-0 right-0 w-32 h-32 border-t-8 border-r-8 border-primary"></div>
+<div class="absolute bottom-0 left-0 w-32 h-32 border-b-8 border-l-8 border-tertiary"></div>
+</div>
+<!-- Image Card with slant -->
+<div class="w-full h-full bg-surface-container-highest flex items-center justify-center relative overflow-hidden slant-edge">
+<img class="w-full h-full object-cover" data-alt="minimalist abstract sculpture of a translucent head with geometric internal structures illuminated by soft blue and lime light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbb3PtgeVp-PyjV3F4nVSgv4qeN6WvghhQicpcugEFILFcXmTbFg-bouTctLCGmMiIwmHd_6fc8L1Z4knna5kdvgzPuGknZPQCiKeXesMuFRdv7anCZv8IOGO2jl3uYZvac8XfszAnfsF5nKmzGQxrx59JOXLdhCSsha8IJd1_z5JaMOfCoNwiWoGQtzRGmA6efhn7aOC0S9w27IvhHynZvWtXFjQkQ0DFE6SobiKSCy-Mqa5pg9veQY7oH9sQ6IqW1HlViXSOQ9U"/>
+<div class="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur-md p-4 shadow-sm border-l-4 border-primary-container">
+<div class="text-[10px] technical-mono font-bold uppercase tracking-widest text-primary mb-1">Status: Pending</div>
+<div class="h-1 w-full bg-surface-container overflow-hidden">
+<div class="h-full bg-primary w-2/3"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Bento Configuration Grid -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+<!-- Character Identity - Parallelogram Input -->
+<div class="md:col-span-2 bg-surface-container-low p-8 relative">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary" data-icon="fingerprint">fingerprint</span>
+<h3 class="font-headline font-bold uppercase tracking-widest text-sm text-on-surface-variant">Core Identity</h3>
+</div>
+<div class="space-y-8">
+<div>
+<label class="technical-mono text-[10px] uppercase tracking-tighter text-outline mb-2 block">Assigned_Name_String</label>
+<div class="relative group h-14">
+<div class="absolute inset-0 bg-surface-container-highest parallelogram transform transition-transform group-focus-within:translate-x-2"></div>
+<input class="absolute inset-0 bg-transparent border-none focus:ring-0 px-8 technical-mono text-on-surface placeholder:text-outline-variant uppercase" placeholder="ENTER DESIGNATION..." type="text"/>
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+</div>
+</div>
+<div>
+<label class="technical-mono text-[10px] uppercase tracking-tighter text-outline mb-2 block">Scholastic_Field_Domain</label>
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+<button class="bg-secondary-container text-on-secondary-container p-3 text-[10px] font-bold technical-mono tracking-tighter hover:bg-secondary transition-colors text-center">HISTORY</button>
+<button class="bg-surface-container-highest text-on-surface-variant p-3 text-[10px] font-bold technical-mono tracking-tighter hover:bg-primary hover:text-white transition-colors text-center">BIOLOGY</button>
+<button class="bg-surface-container-highest text-on-surface-variant p-3 text-[10px] font-bold technical-mono tracking-tighter hover:bg-primary hover:text-white transition-colors text-center">ASTRO</button>
+<button class="bg-tertiary-container text-on-tertiary-container p-3 text-[10px] font-bold technical-mono tracking-tighter hover:bg-tertiary transition-colors text-center">ETHICS</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Parameters - Tonal Stacking -->
+<div class="bg-surface-container p-8 border-t-8 border-primary-container">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary" data-icon="tune">tune</span>
+<h3 class="font-headline font-bold uppercase tracking-widest text-sm text-on-surface-variant">Parameters</h3>
+</div>
+<div class="space-y-6">
+<div class="p-4 bg-surface-container-low flex flex-col gap-2">
+<div class="flex justify-between items-center technical-mono text-[10px] uppercase">
+<span>Empathy</span>
+<span class="text-primary font-bold">78%</span>
+</div>
+<div class="h-1 bg-surface-container-highest relative">
+<div class="absolute inset-y-0 left-0 bg-primary w-[78%]"></div>
+</div>
+</div>
+<div class="p-4 bg-surface-container-low flex flex-col gap-2">
+<div class="flex justify-between items-center technical-mono text-[10px] uppercase">
+<span>Skepticism</span>
+<span class="text-primary font-bold">42%</span>
+</div>
+<div class="h-1 bg-surface-container-highest relative">
+<div class="absolute inset-y-0 left-0 bg-primary w-[42%]"></div>
+</div>
+</div>
+<div class="p-4 bg-surface-container-low flex flex-col gap-2">
+<div class="flex justify-between items-center technical-mono text-[10px] uppercase">
+<span>Creativity</span>
+<span class="text-primary font-bold">95%</span>
+</div>
+<div class="h-1 bg-surface-container-highest relative">
+<div class="absolute inset-y-0 left-0 bg-primary w-[95%]"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Protocol Configuration -->
+<div class="md:col-span-3 bg-surface p-8 relative overflow-hidden">
+<div class="absolute top-0 right-0 w-24 h-24 bg-tertiary-container/30 -translate-y-12 translate-x-12 rotate-45"></div>
+<div class="flex items-center gap-2 mb-8">
+<span class="material-symbols-outlined text-primary" data-icon="terminal">terminal</span>
+<h3 class="font-headline font-bold uppercase tracking-widest text-sm text-on-surface-variant">Logic Protocols</h3>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<div class="flex flex-col gap-4">
+<div class="p-6 bg-surface-container-low relative group cursor-pointer hover:bg-surface-container-high transition-colors">
+<div class="absolute -right-2 -top-2 w-8 h-8 bg-primary flex items-center justify-center text-white">
+<span class="material-symbols-outlined text-sm" data-icon="check">check</span>
+</div>
+<h4 class="font-bold text-lg mb-2">Socratic Method</h4>
+<p class="text-sm text-on-surface-variant leading-relaxed">Engage in continuous questioning to derive truth from complex concepts.</p>
+</div>
+<div class="p-6 bg-surface-container-lowest border-l-4 border-surface-container-high hover:border-primary transition-all cursor-pointer">
+<h4 class="font-bold text-lg mb-2">Analytical Rigor</h4>
+<p class="text-sm text-on-surface-variant leading-relaxed">Prioritize data-driven outcomes and structured logical frameworks.</p>
+</div>
+</div>
+<div class="flex flex-col justify-end gap-6">
+<div class="bg-surface-container-highest p-6 slant-edge">
+<p class="technical-mono text-xs text-on-surface-variant/70 italic">
+                                "Knowledge is not merely an collection of data, but the architectural synthesis of information and intent."
+                            </p>
+</div>
+<!-- Primary Initialization Button -->
+<button class="w-full bg-gradient-to-br from-primary to-primary-container text-white p-6 font-headline font-bold uppercase tracking-[0.3em] flex items-center justify-between group">
+<span>Initialize Unit</span>
+<span class="material-symbols-outlined transform group-hover:translate-x-2 transition-transform" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 bg-[#f8f9ff] border-t border-slate-100/50">
+<a class="flex flex-col items-center justify-center text-slate-400 px-4 py-1 transition-all duration-150 scale-95 hover:bg-[#cee9d9]" href="#">
+<span class="material-symbols-outlined" data-icon="grid_view">grid_view</span>
+<span class="font-['Manrope'] text-[10px] font-bold tracking-[0.1em] uppercase mt-1">COLLECTION</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 px-4 py-1 transition-all duration-150 scale-95 hover:bg-[#cee9d9]" href="#">
+<span class="material-symbols-outlined" data-icon="chat_bubble">chat_bubble</span>
+<span class="font-['Manrope'] text-[10px] font-bold tracking-[0.1em] uppercase mt-1">DIALOGUE</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 px-4 py-1 transition-all duration-150 scale-95 hover:bg-[#cee9d9]" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-['Manrope'] text-[10px] font-bold tracking-[0.1em] uppercase mt-1">INDEX</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-[#f3e992] text-slate-900 rounded-[4px] px-4 py-1 transform -skew-x-12 transition-all duration-150" href="#">
+<div class="transform skew-x-12 flex flex-col items-center">
+<span class="material-symbols-outlined" data-icon="deployed_code" style="font-variation-settings: 'FILL' 1;">deployed_code</span>
+<span class="font-['Manrope'] text-[10px] font-bold tracking-[0.1em] uppercase mt-1">PROTOCOL</span>
+</div>
+</a>
+</nav>
+</body></html>

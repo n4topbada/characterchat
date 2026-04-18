@@ -1,0 +1,356 @@
+@import "tailwindcss";
+
+/* -------------------------------------------------------------------------- */
+/*  The Scholastic Archive — "Modern Archivist" design system                 */
+/*  Source of truth: asset/scholastic_archive/DESIGN.md                        */
+/*  No 1px dividers, no material drop shadows, no pills, no black text.        */
+/* -------------------------------------------------------------------------- */
+
+@theme {
+  /* Surface layer (tonal stacking) */
+  --color-surface: #f8f9ff;
+  --color-surface-dim: #ccdbf2;
+  --color-surface-bright: #f8f9ff;
+  --color-surface-variant: #d4e4fa;
+  --color-surface-tint: #3a5f94;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eef4ff;
+  --color-surface-container: #e5efff;
+  --color-surface-container-high: #dbe9ff;
+  --color-surface-container-highest: #d4e4fa;
+
+  /* Primary — muted archival blue */
+  --color-primary: #3a5f94;
+  --color-primary-container: #dbe6ff;
+  --color-primary-fixed: #d5e3ff;
+  --color-primary-fixed-dim: #a7c8ff;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #43679d;
+  --color-on-primary-fixed: #001b3b;
+  --color-on-primary-fixed-variant: #1f477a;
+
+  /* Secondary — sage lime */
+  --color-secondary: #4c6457;
+  --color-secondary-container: #cee9d9;
+  --color-secondary-fixed: #cee9d9;
+  --color-secondary-fixed-dim: #b2cdbd;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #516a5d;
+  --color-on-secondary-fixed: #082016;
+  --color-on-secondary-fixed-variant: #344c40;
+
+  /* Tertiary — archival yellow (highlights only) */
+  --color-tertiary: #666018;
+  --color-tertiary-container: #f3e992;
+  --color-tertiary-fixed: #efe58f;
+  --color-tertiary-fixed-dim: #d2c976;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #6f6820;
+  --color-on-tertiary-fixed: #1f1c00;
+  --color-on-tertiary-fixed-variant: #4e4800;
+
+  /* Foreground — never pure black */
+  --color-on-surface: #0d1c2d;
+  --color-on-surface-variant: #43474c;
+  --color-on-background: #0d1c2d;
+  --color-background: #f8f9ff;
+
+  /* Outline — use only at 15% opacity as "ghost border" */
+  --color-outline: #73777c;
+  --color-outline-variant: #c3c7cc;
+
+  /* Inverse / error */
+  --color-inverse-surface: #233143;
+  --color-inverse-on-surface: #e9f1ff;
+  --color-inverse-primary: #a7c8ff;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #93000a;
+
+  /* Typography — dual-font editorial system */
+  --font-headline: "Space Grotesk", system-ui, -apple-system, "Apple SD Gothic Neo",
+    "Noto Sans KR", sans-serif;
+  --font-body: "Manrope", system-ui, -apple-system, "Apple SD Gothic Neo",
+    "Noto Sans KR", sans-serif;
+  --font-mono: "Space Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Manrope", system-ui, -apple-system, "Apple SD Gothic Neo",
+    "Noto Sans KR", sans-serif;
+
+  /* Radii — SHARP corners by default */
+  --radius: 0.125rem; /* sm — chips, micro tags */
+  --radius-sm: 0.125rem;
+  --radius-md: 0.375rem; /* buttons */
+  --radius-lg: 0.5rem;   /* chat bubbles (asymmetric), primary cards */
+  --radius-xl: 0.75rem;  /* surface containers */
+  --radius-full: 0.75rem; /* "full" is clipped to 12px — pills prohibited */
+
+  /* Tinted shadows only — 6% primary-tinted, never grey drop shadows */
+  --shadow-tinted: 0 8px 16px rgba(58, 95, 148, 0.06);
+  --shadow-tinted-sm: 0 4px 8px rgba(58, 95, 148, 0.04);
+  --shadow-tinted-lg: 0 12px 24px rgba(58, 95, 148, 0.08);
+  --shadow-cta: 0 8px 24px rgba(58, 95, 148, 0.22);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Base                                                                       */
+/* -------------------------------------------------------------------------- */
+
+html,
+body {
+  background: var(--color-surface);
+  color: var(--color-on-surface);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+  font-weight: 500; /* Manrope medium by default for pastel readability */
+}
+
+::selection {
+  background: var(--color-tertiary-container);
+  color: var(--color-on-tertiary-container);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Glassmorphism (floating shells: header, tab bar, composer, FAB)           */
+/*  Per DESIGN.md §2 — 20~40px backdrop blur                                   */
+/* -------------------------------------------------------------------------- */
+
+.glass {
+  background: rgba(248, 249, 255, 0.78);
+  backdrop-filter: blur(28px) saturate(1.1);
+  -webkit-backdrop-filter: blur(28px) saturate(1.1);
+}
+.glass-strong {
+  background: rgba(248, 249, 255, 0.88);
+  backdrop-filter: blur(40px) saturate(1.2);
+  -webkit-backdrop-filter: blur(40px) saturate(1.2);
+}
+.glass-white {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Diagonal motifs — 15° & 45° (Scholastic Archive signature)                */
+/* -------------------------------------------------------------------------- */
+
+/* Background pattern: 45-degree diagonal hatch */
+.diagonal-bg {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 40px,
+    rgba(58, 95, 148, 0.03) 40px,
+    rgba(58, 95, 148, 0.03) 41px
+  );
+}
+.diagonal-bg-dense {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 20px,
+    rgba(58, 95, 148, 0.04) 20px,
+    rgba(58, 95, 148, 0.04) 21px
+  );
+}
+.dot-pattern {
+  background-image: radial-gradient(
+    rgba(58, 95, 148, 0.1) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+/* Skew helpers — signature 15-degree diagonal clips */
+.skew-x-15 {
+  transform: skewX(-15deg);
+}
+.skew-x-15-rev {
+  transform: skewX(15deg);
+}
+.skew-x-12 {
+  transform: skewX(-12deg);
+}
+.skew-x-12-rev {
+  transform: skewX(12deg);
+}
+
+/* Parallelogram clip-paths for buttons, nav active state, avatars */
+.clip-parallelogram {
+  clip-path: polygon(6% 0%, 100% 0%, 94% 100%, 0% 100%);
+}
+.clip-parallelogram-rev {
+  clip-path: polygon(0% 0%, 94% 0%, 100% 100%, 6% 100%);
+}
+.clip-slant-cut {
+  clip-path: polygon(0 0, 100% 0, 100% 85%, 0 100%);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Chat bubbles — ASYMMETRIC (DESIGN.md §5)                                  */
+/*  Three corners get lg (0.5rem). The corner facing the sender avatar = 0.   */
+/* -------------------------------------------------------------------------- */
+
+.bubble-receive {
+  /* model message — top-left (avatar corner) = 0 */
+  border-radius: 0 0.5rem 0.5rem 0.5rem;
+}
+.bubble-send {
+  /* user message — top-right (avatar corner) = 0 */
+  border-radius: 0.5rem 0 0.5rem 0.5rem;
+}
+.bubble-receive-sm {
+  border-radius: 0.125rem 0.5rem 0.5rem 0.5rem;
+}
+.bubble-send-sm {
+  border-radius: 0.5rem 0.125rem 0.5rem 0.5rem;
+}
+
+/* Narration span (*...*) — DESIGN.md §3 editorial italic */
+.narration {
+  color: var(--color-on-surface-variant);
+  font-style: italic;
+  opacity: 0.8;
+  letter-spacing: 0.01em;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Gradient CTAs — 135° primary → primary-container                          */
+/* -------------------------------------------------------------------------- */
+
+.btn-cta-gradient {
+  background-image: linear-gradient(
+    135deg,
+    var(--color-primary) 0%,
+    var(--color-primary-container) 100%
+  );
+  color: var(--color-on-primary);
+  transition: transform 160ms ease, filter 160ms ease;
+}
+.btn-cta-gradient:hover {
+  filter: brightness(1.04);
+}
+.btn-cta-gradient:active {
+  transform: scale(0.97);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Scholastic label — all-caps, 5% letter-spacing                             */
+/* -------------------------------------------------------------------------- */
+
+.label-scholastic {
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 10px;
+}
+.label-scholastic-xs {
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 9px;
+}
+.label-mono {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 10px;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Ghost border — 15% opacity outline-variant                                 */
+/* -------------------------------------------------------------------------- */
+
+.ghost-border {
+  border: 1px solid rgba(195, 199, 204, 0.15);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Vertical carousel snap                                                     */
+/* -------------------------------------------------------------------------- */
+
+.carousel-y {
+  scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.carousel-y::-webkit-scrollbar {
+  display: none;
+}
+.carousel-y > * {
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Accent bar — left 2px primary bar for focused inputs                       */
+/* -------------------------------------------------------------------------- */
+
+.accent-bar-left {
+  position: relative;
+}
+.accent-bar-left::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-primary);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Headline tightening — Space Grotesk letter-spacing for Archive voice       */
+/* -------------------------------------------------------------------------- */
+
+.font-headline,
+h1.font-headline,
+h2.font-headline,
+h3.font-headline {
+  font-family: var(--font-headline);
+  letter-spacing: -0.015em;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Animations                                                                 */
+/* -------------------------------------------------------------------------- */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 240ms ease-out both;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
