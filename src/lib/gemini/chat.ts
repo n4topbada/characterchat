@@ -1,3 +1,4 @@
+import { HarmBlockThreshold, HarmCategory } from "@google/genai";
 import { withGeminiFallback } from "./client";
 import type { MessageRole } from "@prisma/client";
 import {
@@ -34,6 +35,16 @@ type StreamArgs = {
   maxOutputTokens?: number;
 };
 
+// 성인 롤플레이 플랫폼 — 4개 카테고리 모두 BLOCK_NONE. 그렇지 않으면 기본값
+// BLOCK_MEDIUM_AND_ABOVE 가 성적·폭력적 연출에서 응답을 잘라 빈 스트림을 반환한다.
+// 현실 인물 공격, 아동 등 '한계' 관련 내용은 persona redLines + [금지] 블록에서 차단한다.
+const PERMISSIVE_SAFETY = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
+
 export async function* streamChat(args: StreamArgs) {
   const contents = args.history.map((turn) => ({
     role: turn.role === "model" ? "model" : "user",
@@ -50,6 +61,7 @@ export async function* streamChat(args: StreamArgs) {
         topP: args.topP ?? undefined,
         topK: args.topK ?? undefined,
         maxOutputTokens: args.maxOutputTokens ?? 1024,
+        safetySettings: PERMISSIVE_SAFETY,
       },
     }),
   );

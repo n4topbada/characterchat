@@ -126,7 +126,39 @@ export function statusToTokens(status: unknown): string[] {
     out.push(s.mood.toLowerCase());
   }
 
+  // scene → sceneTag 매칭. LLM 이 status.scene 을 내면 "sex"/"bath"/"sleep" 등이
+  // sceneTag 매칭 경로로 곧바로 들어간다. 필드가 없어도 기존 동작엔 영향 없음.
+  if (typeof s.scene === "string") {
+    out.push(s.scene.toLowerCase());
+  }
+
   return out;
+}
+
+// 프롬프트(LLM emit 어휘)와 DB 에셋 태깅 어휘 사이 불일치를 메운다.
+// 예: LLM 은 "aroused" 로 내놓는데 moodFit 에는 "horny" 로 태깅돼 있어 +3 보너스 실패.
+const SYNONYMS: Record<string, string[]> = {
+  aroused: ["horny"],
+  horny: ["aroused"],
+  affectionate: ["loving"],
+  loving: ["affectionate"],
+  flustered: ["embarrassed"],
+  embarrassed: ["flustered"],
+  happy: ["cheerful", "joyful"],
+  sad: ["upset"],
+  tender: ["loving", "affectionate"],
+  sleepy: ["tired"],
+  surprised: ["startled"],
+};
+
+function expandTokens(tokens: string[]): string[] {
+  const out = new Set<string>();
+  for (const t of tokens) {
+    const low = t.toLowerCase();
+    out.add(low);
+    for (const syn of SYNONYMS[low] ?? []) out.add(syn);
+  }
+  return [...out];
 }
 
 export function scoreAsset(
@@ -136,33 +168,37 @@ export function scoreAsset(
 ): number {
   if (!ctx.nsfwEnabled && asset.nsfwLevel > 0) return -Infinity;
 
+  const expanded = expandTokens(tokens);
   let score = 0;
 
-  // 1) clothing
-  const clothingTokens = tokens
+  // 1) clothing — 의도 불일치 페널티는 약하게(-1). 장면 전환 중 underwear/partial 도
+  //    자연스럽게 뽑히도록 여유를 둔다.
+  const clothingTokens = expanded
     .map(normalizeClothing)
     .filter((x): x is string => !!x);
   if (clothingTokens.length && asset.clothingTag) {
     if (clothingTokens.includes(asset.clothingTag)) score += 10;
-    else score -= 4; // 의도 불일치
+    else score -= 1;
   }
 
-  // 2) sceneTag — 트리거 안의 일반 키워드와 sceneTag 비교
+  // 2) sceneTag — exact 매칭, 그리고 "sex" 토큰은 "sex_*" prefix 모두에 보너스.
+  //    (asset sceneTag 는 sex_a/sex_b 로 세분화돼 있지만 토큰 쪽은 "sex" 하나로 묶어 보낸다.)
   if (asset.sceneTag) {
-    if (tokens.includes(asset.sceneTag)) score += 5;
+    if (expanded.includes(asset.sceneTag)) score += 5;
+    else if (expanded.includes("sex") && asset.sceneTag.startsWith("sex")) score += 5;
   }
 
   // 3) expression
-  if (asset.expression && tokens.includes(asset.expression)) score += 4;
+  if (asset.expression && expanded.includes(asset.expression)) score += 4;
 
   // 4) moodFit
-  score += hasAny(asset.moodFit, tokens) * 3;
+  score += hasAny(asset.moodFit, expanded) * 3;
 
   // 5) locationFit
-  score += hasAny(asset.locationFit, tokens) * 2;
+  score += hasAny(asset.locationFit, expanded) * 2;
 
   // 6) triggerTags (자유 키워드 오버랩)
-  score += hasAny(asset.triggerTags, tokens) * 2;
+  score += hasAny(asset.triggerTags, expanded) * 2;
 
   // 7) NSFW 가드
   const horny = ctx.horny ?? 0;
@@ -225,6 +261,10 @@ const BODY_KEYWORDS: Array<{ re: RegExp; tags: string[] }> = [
   { re: /장난|놀려/, tags: ["playful"] },
   { re: /다정|쓰다듬|어루만/, tags: ["tender", "affectionate"] },
   { re: /흥분|달아오|뜨거워|숨이 가/, tags: ["aroused"] },
+  // 섹스 씬 매칭 — "sex" 토큰은 scoreAsset 에서 sceneTag 가 "sex_*" 로 시작하는
+  // 모든 에셋에 +5 를 주는 fallback 을 태운다. 과매칭 우려가 있지만 aroused/horny
+  // 가 함께 오지 않으면 NSFW 가드(-8)에 막혀서 실제 선택은 거의 되지 않는다.
+  { re: /관계|삽입|박아|박으|들어와|속으로|절정|흘러|신음|헐떡|교성|섹스/, tags: ["sex", "moaning", "horny"] },
 ];
 
 export function spotBodyTokens(body: string): string[] {

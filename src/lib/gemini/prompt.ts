@@ -264,10 +264,11 @@ function formatBlock(statusPanelSchema?: unknown | null): string {
   if (statusPanelSchema) {
     lines.push(
       `- 응답 말미에 상태창 블록을 둔다: <status>${JSON.stringify(statusPanelSchema)}</status>  (키 순서 유지)`,
-      "- 상태창의 mood/outfit/location 은 **매 턴 장면에 맞게 갱신**한다. 같은 값을 반복하지 말 것.",
+      "- 상태창의 mood/outfit/location/scene 은 **매 턴 장면에 맞게 갱신**한다. 같은 값을 반복하지 말 것.",
       "  · mood 어휘 예시: calm, shy, playful, affectionate, aroused, flustered, sulky, happy, sad, tense, tender, focused, sleepy, surprised, embarrassed",
       "  · outfit 어휘 예시: casual, pajamas, towel, underwear, naked, partial, swimwear, formal",
       "  · location 은 장면이 벌어지는 실제 공간(bedroom, bathroom, kitchen, living_room, outside 등)을 정확히 반영",
+      "  · scene 은 현재 상황 타입을 한 단어로 — home, bath, sleep, kiss, hug, sex, outdoor 등. 스키마에 scene 키가 없으면 생략 가능.",
       "  · horny/affection/energy 수치는 장면 강도에 따라 실제로 움직일 것. 평형 상태에 고정해 두지 말 것.",
     );
   }
