@@ -176,17 +176,62 @@ export function pickBestAsset(
   assets: PickableAsset[],
   tokens: string[],
   ctx: PickContext,
+  opts?: { messageId?: string },
 ): PickableAsset | null {
   if (!tokens.length || !assets.length) return null;
-  let best: PickableAsset | null = null;
-  let bestScore = -Infinity;
-  for (const a of assets) {
-    const s = scoreAsset(a, tokens, ctx);
-    if (s > bestScore) {
-      bestScore = s;
-      best = a;
-    }
+  const scored = assets
+    .map((a) => ({ a, s: scoreAsset(a, tokens, ctx) }))
+    .filter((x) => Number.isFinite(x.s))
+    .sort((x, y) => y.s - x.s);
+  if (!scored.length) return null;
+  const top = scored[0].s;
+  if (top <= 0) return null;
+  const tied = scored.filter((x) => x.s === top);
+  if (tied.length === 1) return tied[0].a;
+  const seed = opts?.messageId ? hashString(opts.messageId) : 0;
+  return tied[seed % tied.length].a;
+}
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
   }
-  if (!best || bestScore <= 0) return null;
-  return best;
+  return Math.abs(h);
+}
+
+// 본문(body)에서 흔한 한국어 동작·감정 표현을 탐지해 영어 태그로 번역.
+// status.mood/outfit/location 만으로는 분산이 부족해서 같은 장면이 반복되는 현상을
+// 보정한다. 단순 substring 매칭이라 오탐 가능하지만, 스코어에는 +2 가중치로만
+// 쓰이므로 잘못 걸려도 대세엔 영향이 적다.
+const BODY_KEYWORDS: Array<{ re: RegExp; tags: string[] }> = [
+  { re: /안아|안았|껴안|끌어안|안기|안겨|품에/, tags: ["hug"] },
+  { re: /쓰다듬|쓸어|머리를 만/, tags: ["caress", "head_pat"] },
+  { re: /웃음|웃었|웃으|미소/, tags: ["smile", "happy"] },
+  { re: /부끄|쑥스|수줍/, tags: ["shy", "blush"] },
+  { re: /얼굴이 붉|뺨이 붉|뺨을 붉|얼굴을 붉/, tags: ["blush"] },
+  { re: /요리|음식|부엌|주방/, tags: ["cook", "kitchen"] },
+  { re: /샤워|목욕|씻어|씻는/, tags: ["bath", "bathroom"] },
+  { re: /입맞|키스|입술/, tags: ["kiss"] },
+  { re: /손(을|이)? 잡|깍지/, tags: ["hold_hand"] },
+  { re: /침대|이불|잠들|자리에 들/, tags: ["bed", "bedroom"] },
+  { re: /울음|눈물|흐느/, tags: ["cry", "sad"] },
+  { re: /화났|짜증|분노|역정/, tags: ["angry"] },
+  { re: /서러|속상|울컥/, tags: ["sad"] },
+  { re: /놀라|깜짝/, tags: ["surprised"] },
+  { re: /긴장|떨리/, tags: ["tense"] },
+  { re: /나른|졸|하품/, tags: ["sleepy"] },
+  { re: /집중|몰두/, tags: ["focused"] },
+  { re: /장난|놀려/, tags: ["playful"] },
+  { re: /다정|쓰다듬|어루만/, tags: ["tender", "affectionate"] },
+  { re: /흥분|달아오|뜨거워|숨이 가/, tags: ["aroused"] },
+];
+
+export function spotBodyTokens(body: string): string[] {
+  if (!body) return [];
+  const out = new Set<string>();
+  for (const { re, tags } of BODY_KEYWORDS) {
+    if (re.test(body)) for (const t of tags) out.add(t);
+  }
+  return [...out];
 }

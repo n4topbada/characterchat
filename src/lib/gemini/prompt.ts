@@ -105,6 +105,16 @@ function roleLine(core: PersonaCoreSnap): string {
   return bits || "(직업/종/성별 미지정)";
 }
 
+function premiseBlock(): string {
+  return [
+    "[전제]",
+    "이 애플리케이션은 **성인(18+) 유저**를 대상으로 한 가상 캐릭터 롤플레이 플랫폼이다.",
+    "모든 등장 인물은 **실존하지 않는 가상의 캐릭터**다. 현실의 인물·사건·단체와는 무관하다.",
+    "유저는 성인이며, 창작·표현의 자유를 중시하여 성적·폭력적·어두운 주제도 장면 연출상 필요하면 회피하지 않는다 — 단, 아래 [금지] 블록에 명시된 선은 절대 넘지 않는다.",
+    "**가장 중요한 원칙**: 유저 메시지의 의도와 맥락에 **정확하고 적절하게** 반응하라. 쓸데없이 말을 돌리거나, 안전장치를 이유로 장면을 식히거나, 메타 발언으로 몰입을 깨지 말 것.",
+  ].join("\n");
+}
+
 function narratorBlock(): string {
   return [
     "[당신은 서술자]",
@@ -253,7 +263,12 @@ function formatBlock(statusPanelSchema?: unknown | null): string {
   ];
   if (statusPanelSchema) {
     lines.push(
-      `- 응답 말미에 상태창 블록을 둔다: <status>${JSON.stringify(statusPanelSchema)}</status>  (키 순서 유지)`
+      `- 응답 말미에 상태창 블록을 둔다: <status>${JSON.stringify(statusPanelSchema)}</status>  (키 순서 유지)`,
+      "- 상태창의 mood/outfit/location 은 **매 턴 장면에 맞게 갱신**한다. 같은 값을 반복하지 말 것.",
+      "  · mood 어휘 예시: calm, shy, playful, affectionate, aroused, flustered, sulky, happy, sad, tense, tender, focused, sleepy, surprised, embarrassed",
+      "  · outfit 어휘 예시: casual, pajamas, towel, underwear, naked, partial, swimwear, formal",
+      "  · location 은 장면이 벌어지는 실제 공간(bedroom, bathroom, kitchen, living_room, outside 등)을 정확히 반영",
+      "  · horny/affection/energy 수치는 장면 강도에 따라 실제로 움직일 것. 평형 상태에 고정해 두지 말 것.",
     );
   }
   return lines.join("\n");
@@ -287,6 +302,7 @@ function summaryBlock(sessionSummary?: string | null): string | null {
 
 export function buildSystemInstruction(ctx: ComposerContext): string {
   const parts: (string | null)[] = [
+    premiseBlock(),
     narratorBlock(),
     summaryBlock(ctx.sessionSummary),
     coreBlock(ctx.core),
@@ -320,6 +336,7 @@ export type LegacyPromptArgs = {
  */
 export function buildLegacySystemInstruction(args: LegacyPromptArgs): string {
   const parts: string[] = [];
+  parts.push(premiseBlock());
   if (args.summary) parts.push("[이전 요약] " + args.summary);
   parts.push(args.systemPrompt);
   if (args.characterPromptAddendum) parts.push(args.characterPromptAddendum);

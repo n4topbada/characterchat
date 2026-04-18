@@ -129,6 +129,13 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
                     : m
                 )
               );
+            } else if (event === "retry") {
+              // 서버가 빈 응답/블록 감지 후 재시도 — 지금까지의 delta 버퍼를 리셋.
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === modelId ? { ...m, content: "" } : m
+                )
+              );
             } else if (event === "error") {
               setMessages((prev) =>
                 prev.map((m) =>

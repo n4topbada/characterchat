@@ -9,6 +9,7 @@ import { retrieveForPrompt } from "@/lib/rag/retrieve";
 import { extractStatus } from "@/lib/narration";
 import {
   pickBestAsset,
+  spotBodyTokens,
   statusToTokens,
   stripImageTags,
   type PickableAsset,
@@ -206,8 +207,19 @@ export async function POST(
   });
 
   return sseStream(async (send) => {
-    let full = "";
-    try {
+    // messageId 는 스트림 시작 전에 미리 정해 pickAsset 의 tie-break 해시 seed 로 사용.
+    // 같은 status 가 반복되어도 메시지마다 결정적으로 다른 후보를 고를 수 있게 한다.
+    const messageId = newId();
+
+    // 수용 가능한 응답인지 — status 블록을 뺀 본문이 너무 짧거나 공백이면 block/empty 로 본다.
+    const isAcceptable = (text: string): boolean => {
+      const { body } = extractStatus(text);
+      const clean = stripImageTags(body).replace(/\s+/g, " ").trim();
+      return clean.length >= 5;
+    };
+
+    const runAttempt = async (): Promise<string> => {
+      let acc = "";
       for await (const delta of streamChat({
         model: cfg.model,
         systemInstruction,
@@ -220,30 +232,77 @@ export async function POST(
         topK: cfg.topK,
         maxOutputTokens: cfg.maxOutputTokens,
       })) {
-        full += delta;
+        acc += delta;
         send("delta", { text: delta });
       }
-      const messageId = newId();
+      return acc;
+    };
+
+    let full = "";
+    try {
+      const MAX_ATTEMPTS = 2;
+      let lastErr: unknown = null;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          const out = await runAttempt();
+          if (isAcceptable(out)) {
+            full = out;
+            break;
+          }
+          lastErr = new Error("empty_or_blocked");
+          if (attempt < MAX_ATTEMPTS) {
+            console.warn(
+              `[chat] attempt ${attempt} produced empty/blocked output, retrying`,
+            );
+            send("retry", { reason: "empty_or_blocked" });
+          } else {
+            // 마지막 시도도 빈 응답이면 그대로 채택 (에러보다는 낫다)
+            full = out;
+          }
+        } catch (err) {
+          lastErr = err;
+          if (attempt < MAX_ATTEMPTS) {
+            console.warn(
+              `[chat] attempt ${attempt} threw: ${
+                err instanceof Error ? err.message : String(err)
+              }, retrying`,
+            );
+            send("retry", {
+              reason: err instanceof Error ? err.message : "error",
+            });
+          } else {
+            throw err;
+          }
+        }
+      }
+      if (!full && lastErr) throw lastErr;
 
       // <status>{...}</status> 블록이 있으면 PersonaState.statusPayload 에 반영.
       // 파싱 실패는 무시 — 채팅 흐름을 막으면 안 된다.
-      const { status } = extractStatus(full);
+      const { status, body } = extractStatus(full);
 
-      // status 의 outfit/location/mood 를 pickAsset 토큰으로 변환해 Asset 을 고른다.
-      // (모델이 인라인 <img> 토큰을 감당 못해서 status 기반으로 전환)
+      // status 의 outfit/location/mood + 본문 한국어 키워드를 합쳐 Asset 토큰화.
+      // body 스포팅은 장면 다양성 보정 — 같은 status 값 반복 시 본문에서 힌트를 추가로 끌어온다.
       let pickedAsset: PickableAsset | null = null;
       if (galleryAssets.length && status && typeof status === "object") {
-        const tokens = statusToTokens(status);
+        const statusTokens = statusToTokens(status);
+        const bodyTokens = spotBodyTokens(body);
+        const tokens = [...statusTokens, ...bodyTokens];
         if (tokens.length) {
           const s = status as Record<string, unknown>;
           const horny = typeof s.horny === "number" ? (s.horny as number) : null;
           const affection =
             typeof s.affection === "number" ? (s.affection as number) : null;
-          pickedAsset = pickBestAsset(galleryAssets, tokens, {
-            nsfwEnabled: session.character.nsfwEnabled,
-            horny,
-            affection,
-          });
+          pickedAsset = pickBestAsset(
+            galleryAssets,
+            tokens,
+            {
+              nsfwEnabled: session.character.nsfwEnabled,
+              horny,
+              affection,
+            },
+            { messageId },
+          );
         }
       }
 
