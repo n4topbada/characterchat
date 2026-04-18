@@ -32,11 +32,11 @@ export default async function CharacterLandingPage({
   const code = c.slug.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 10);
 
   return (
-    <main className="min-h-dvh bg-surface relative">
-      <div className="fixed inset-0 pointer-events-none dot-pattern opacity-30 z-0" />
+    <main className="flex-1 min-h-0 bg-surface relative overflow-y-auto">
+      <div className="absolute inset-0 pointer-events-none dot-pattern opacity-30 z-0" />
 
-      <header className="glass fixed top-0 inset-x-0 z-30">
-        <div className="flex items-center justify-between px-5 py-3 max-w-2xl mx-auto">
+      <header className="glass sticky top-0 inset-x-0 z-30">
+        <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <Link
               href={"/find" as "/find"}
@@ -65,7 +65,7 @@ export default async function CharacterLandingPage({
       </header>
 
       {/* Hero portrait */}
-      <div className="relative h-[58dvh] w-full overflow-hidden pt-16 z-10">
+      <div className="relative h-[58dvh] w-full overflow-hidden z-10 -mt-16 pt-16">
         {hero ? (
           <Image
             src={hero}
@@ -99,7 +99,7 @@ export default async function CharacterLandingPage({
       </div>
 
       {/* Card */}
-      <section className="-mt-16 relative z-20 max-w-2xl mx-auto px-5">
+      <section className="-mt-16 relative z-20 px-4">
         <div className="bg-surface-container-lowest rounded-lg shadow-tinted-lg relative overflow-hidden">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
           <div className="p-7 pl-8">
@@ -131,13 +131,9 @@ export default async function CharacterLandingPage({
               {c.tagline}
             </p>
 
-            <div className="mb-4">
+            <div>
               <StartChatButton characterId={c.id} />
             </div>
-
-            <p className="label-mono text-outline text-[10px] mt-3 text-center">
-              TLS_1.3 · LATENCY:14MS · MODEL:GEMINI_3.0
-            </p>
           </div>
         </div>
       </section>

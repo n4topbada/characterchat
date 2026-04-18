@@ -90,8 +90,8 @@ export default async function CreatePage() {
                       Caster Protocol
                     </h4>
                     <p className="text-xs text-on-surface-variant leading-relaxed">
-                      Gemini 3.0 Flash 기반 디자이너 에이전트가 자연어 대화로
-                      캐릭터 구조체를 수집합니다.
+                      디자이너 에이전트가 자연어 대화로 캐릭터 구조체를
+                      수집합니다.
                     </p>
                   </div>
                   <div className="p-5 bg-surface-container-lowest border-l-4 border-surface-container-high hover:border-primary transition-all">

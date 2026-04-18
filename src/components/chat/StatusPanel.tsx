@@ -19,7 +19,7 @@ export function StatusPanel({ status }: Props) {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="상태 열기"
-        className="fixed right-3 top-20 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-outline/40 bg-surface-container-high/95 backdrop-blur-md shadow-tinted-sm text-on-surface-variant transition-colors hover:bg-surface-container-high"
+        className="absolute right-3 top-16 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-outline/40 bg-surface-container-high/95 backdrop-blur-md shadow-tinted-sm text-on-surface-variant transition-colors hover:bg-surface-container-high"
       >
         <Activity size={14} strokeWidth={2} />
       </button>
@@ -27,7 +27,7 @@ export function StatusPanel({ status }: Props) {
   }
 
   return (
-    <div className="fixed right-3 top-20 z-20 w-48 rounded-md border border-outline/40 bg-surface-container-high/95 backdrop-blur-md shadow-tinted-sm">
+    <div className="absolute right-3 top-16 z-20 w-48 rounded-md border border-outline/40 bg-surface-container-high/95 backdrop-blur-md shadow-tinted-sm">
       <div className="flex items-center justify-between px-3 py-2">
         <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">
           <Activity size={11} strokeWidth={2} />

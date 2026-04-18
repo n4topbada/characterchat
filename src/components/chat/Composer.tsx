@@ -22,10 +22,10 @@ export function Composer({ onSend, disabled, placeholder }: Props) {
 
   return (
     <div
-      className="fixed bottom-0 inset-x-0 z-30 px-4 pb-6 pt-2"
-      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 1.25rem)" }}
+      className="shrink-0 px-3 pt-2 pb-3"
+      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.75rem)" }}
     >
-      <div className="max-w-2xl mx-auto">
+      <div>
         <div className="glass-strong ghost-border rounded-xl shadow-tinted p-2">
           <div className="flex items-end gap-2">
             {/* Attach */}
@@ -62,8 +62,8 @@ export function Composer({ onSend, disabled, placeholder }: Props) {
                   }
                 }}
                 rows={1}
-                placeholder={placeholder ?? "COMMAND_INPUT_PROMPT"}
-                className="w-full resize-none bg-surface-container-low border-none focus:ring-0 focus:outline-none text-sm py-3 pl-4 pr-3 placeholder:text-outline/60 placeholder:label-mono placeholder:text-[11px] max-h-40 text-on-surface leading-relaxed"
+                placeholder={placeholder ?? "메시지를 입력하세요"}
+                className="w-full resize-none bg-surface-container-low border-none focus:ring-0 focus:outline-none text-sm py-3 pl-4 pr-3 placeholder:text-outline/60 placeholder:text-[13px] max-h-40 text-on-surface leading-relaxed"
                 disabled={disabled}
               />
             </div>
@@ -74,7 +74,7 @@ export function Composer({ onSend, disabled, placeholder }: Props) {
               onClick={submit}
               disabled={disabled || !value.trim()}
               aria-label="Send"
-              className="relative group h-12 px-6 flex items-center justify-center overflow-hidden shrink-0 disabled:opacity-40 active:scale-[0.97] transition-transform"
+              className="relative group h-12 px-5 flex items-center justify-center overflow-hidden shrink-0 disabled:opacity-40 active:scale-[0.97] transition-transform"
             >
               <div
                 className="absolute inset-0 btn-cta-gradient group-hover:brightness-110 transition-all"
@@ -85,24 +85,6 @@ export function Composer({ onSend, disabled, placeholder }: Props) {
                 <Terminal size={14} strokeWidth={2.5} />
               </div>
             </button>
-          </div>
-
-          {/* Tactical metadata row */}
-          <div className="flex justify-between items-center mt-2 px-2">
-            <div className="flex gap-4">
-              <span className="label-mono text-outline text-[9px]">
-                SECURE_CHANNEL:TLS_1.3
-              </span>
-              <span className="label-mono text-outline text-[9px] hidden sm:inline">
-                MODEL:GEMINI_3.0
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-secondary-fixed rounded-full animate-pulse-dot" />
-              <span className="label-mono text-secondary text-[9px] font-bold">
-                SCHOLAR_ONLINE
-              </span>
-            </div>
           </div>
         </div>
       </div>

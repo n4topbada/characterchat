@@ -163,31 +163,29 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
   }, [messages]);
 
   return (
-    <div className="min-h-dvh bg-surface flex flex-col relative">
-      {/* Background patterns */}
-      <div className="fixed inset-0 pointer-events-none diagonal-bg opacity-60 z-0" />
-      <div className="fixed inset-0 pointer-events-none dot-pattern opacity-30 z-0" />
+    <div className="flex-1 min-h-0 bg-surface flex flex-col relative overflow-hidden">
+      {/* Background patterns — scoped to chat frame */}
+      <div className="absolute inset-0 pointer-events-none diagonal-bg opacity-60 z-0" />
+      <div className="absolute inset-0 pointer-events-none dot-pattern opacity-30 z-0" />
 
-      {/* Top nav — glass */}
-      <header className="fixed top-0 inset-x-0 z-30 glass">
-        <div className="flex items-center justify-between px-4 py-3 max-w-2xl mx-auto">
-          <div className="flex items-center gap-3 min-w-0">
+      {/* Top nav — flex child, not fixed */}
+      <header className="shrink-0 z-30 glass border-b border-outline-variant/20">
+        <div className="flex items-center justify-between px-3 py-2.5">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <Link
               href={"/history" as "/history"}
               aria-label="Back"
-              className="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-colors active:scale-95 rounded-md"
+              className="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-colors active:scale-95 rounded-md shrink-0"
             >
-              <ArrowLeft size={20} strokeWidth={2} />
+              <ArrowLeft size={18} strokeWidth={2} />
             </Link>
-            <div
-              className="relative w-10 h-10 overflow-hidden bg-primary-container rounded-md border-2 border-primary-container shrink-0"
-            >
+            <div className="relative w-9 h-9 overflow-hidden bg-primary-container rounded-md border-2 border-primary-container shrink-0">
               {character.portraitUrl ? (
                 <Image
                   src={character.portraitUrl}
                   alt=""
-                  width={40}
-                  height={40}
+                  width={36}
+                  height={36}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -202,36 +200,36 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
               )}
             </div>
             <div className="flex flex-col min-w-0">
-              <h1 className="font-headline font-black tracking-[0.2em] text-on-surface uppercase text-xs truncate">
+              <h1 className="font-headline font-black tracking-[0.15em] text-on-surface uppercase text-xs truncate">
                 {character.name}
               </h1>
-              <p className="label-mono text-primary flex items-center gap-1 text-[9px]">
+              <p className="flex items-center gap-1 text-[9px] text-primary">
                 <span className="w-1.5 h-1.5 bg-secondary-fixed rounded-full inline-block animate-pulse-dot" />
-                DIALOGUE_ACTIVE
+                <span className="label-mono">ONLINE</span>
               </p>
             </div>
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-0.5 shrink-0">
             <button
               type="button"
               aria-label="Search"
-              className="w-10 h-10 flex items-center justify-center text-on-surface-variant/60 hover:bg-surface-container-low transition-colors rounded-md"
+              className="w-9 h-9 flex items-center justify-center text-on-surface-variant/60 hover:bg-surface-container-low transition-colors rounded-md"
             >
-              <Search size={18} strokeWidth={2} />
+              <Search size={16} strokeWidth={2} />
             </button>
             <button
               type="button"
               aria-label="Settings"
-              className="w-10 h-10 flex items-center justify-center text-primary hover:bg-surface-container-low transition-colors rounded-md"
+              className="w-9 h-9 flex items-center justify-center text-primary hover:bg-surface-container-low transition-colors rounded-md"
             >
-              <SlidersHorizontal size={18} strokeWidth={2} />
+              <SlidersHorizontal size={16} strokeWidth={2} />
             </button>
           </div>
         </div>
       </header>
 
-      {/* Chat log */}
-      <main className="flex-1 pt-24 pb-40 px-4 max-w-2xl mx-auto w-full flex flex-col gap-10 relative z-10">
+      {/* Chat log — internal scroll */}
+      <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-5 flex flex-col gap-8 relative z-10">
         {messages.map((m) => (
           <MessageBubble key={m.id} msg={m} senderLabel={senderCode} />
         ))}
@@ -248,7 +246,7 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
       <Composer
         onSend={send}
         disabled={streaming}
-        placeholder={`COMMAND_${senderCode}`}
+        placeholder="메시지를 입력하세요"
       />
     </div>
   );

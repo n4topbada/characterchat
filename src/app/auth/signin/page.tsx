@@ -48,12 +48,6 @@ export default async function SignInPage({
         {/* Auth shell */}
         <div className="bg-surface-container-low p-6 relative border-l-4 border-primary shadow-tinted">
           <div className="absolute top-0 right-0 w-16 h-16 bg-tertiary-container/30 -translate-y-8 translate-x-8 rotate-45 pointer-events-none" />
-          <div className="flex items-center gap-2 mb-4">
-            <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-pulse-dot" />
-            <span className="label-mono text-secondary text-[10px]">
-              CHANNEL_READY:TLS_1.3
-            </span>
-          </div>
           <SignInButtons callbackUrl={callbackUrl ?? "/find"} isDev={isDev} />
         </div>
 

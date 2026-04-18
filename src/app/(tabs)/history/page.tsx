@@ -5,9 +5,38 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { TopAppBar } from "@/components/nav/TopAppBar";
 import { ScrollPage } from "@/components/layout/ScrollPage";
+import {
+  extractStatus,
+  splitDialogueBlocks,
+  splitNarration,
+} from "@/lib/narration";
 import { MessageSquare, Network } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+// 봇의 최근 '대사'만 뽑는다. 나레이션(*...*) 과 <status> 블록은 제외.
+// 대화기록 미리보기는 오로지 챗봇의 발화 문장만 보여준다.
+function pickLastBotSpeech(
+  messages: { role: string; content: string }[],
+): string | null {
+  for (const m of messages) {
+    if (m.role !== "model") continue;
+    const { body } = extractStatus(m.content);
+    const blocks = splitDialogueBlocks(body);
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b = blocks[i];
+      if (b.kind !== "dialogue") continue;
+      const speech = splitNarration(b.value)
+        .filter((s) => s.kind === "text")
+        .map((s) => s.value)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (speech.length > 0) return speech;
+    }
+  }
+  return null;
+}
 
 function formatTimestamp(d: Date): string {
   const diff = Date.now() - d.getTime();
@@ -42,7 +71,11 @@ export default async function HistoryPage() {
           },
         },
       },
-      messages: { orderBy: { createdAt: "desc" }, take: 1 },
+      messages: {
+        where: { role: "model" },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+      },
     },
   });
 
@@ -109,7 +142,7 @@ export default async function HistoryPage() {
           ) : (
             <div className="grid gap-5">
               {rows.map((s, idx) => {
-                const last = s.messages[0];
+                const preview = pickLastBotSpeech(s.messages);
                 const portrait = s.character.assets[0]?.blobUrl ?? null;
                 const isActive = idx === 0;
                 return (
@@ -164,12 +197,20 @@ export default async function HistoryPage() {
                           </span>
                         </div>
                         <div
-                          className="bg-surface p-2.5 border-l-2 border-tertiary-container shadow-tinted-sm"
+                          className="bg-surface p-2.5 border-l-2 border-tertiary-container shadow-tinted-sm min-w-0"
                           style={{ borderRadius: "0.125rem 0.5rem 0.5rem 0.5rem" }}
                         >
-                          <p className="text-on-surface-variant text-sm leading-relaxed truncate">
-                            {last?.content.replace(/\*/g, "").slice(0, 80) ??
-                              "INITIATE_FIRST_TRANSMISSION..."}
+                          <p
+                            className="text-on-surface-variant text-sm leading-relaxed break-words overflow-hidden"
+                            style={{
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                            }}
+                          >
+                            {preview
+                              ? preview.slice(0, 180)
+                              : "아직 대사가 없습니다."}
                           </p>
                         </div>
                         {isActive && (
