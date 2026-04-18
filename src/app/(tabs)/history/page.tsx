@@ -11,6 +11,7 @@ import {
   splitNarration,
 } from "@/lib/narration";
 import { MessageSquare, Network } from "lucide-react";
+import { DeleteSessionButton } from "./DeleteSessionButton";
 
 export const dynamic = "force-dynamic";
 
@@ -146,20 +147,20 @@ export default async function HistoryPage() {
                 const portrait = s.character.assets[0]?.blobUrl ?? null;
                 const isActive = idx === 0;
                 return (
-                  <Link
-                    key={s.id}
-                    href={`/chat/${s.id}`}
-                    className={[
-                      "group relative block transition-all duration-300 active:scale-[0.99]",
-                      isActive
-                        ? "bg-surface-container-low hover:bg-surface-container-highest"
-                        : "bg-surface-container-lowest hover:bg-surface-container-low",
-                    ].join(" ")}
-                  >
-                    {isActive && (
-                      <div className="absolute -left-1 top-0 bottom-0 w-1 bg-primary" />
-                    )}
-                    <div className="p-5 flex items-start gap-4">
+                  <div key={s.id} className="relative">
+                    <Link
+                      href={`/chat/${s.id}`}
+                      className={[
+                        "group relative block transition-all duration-300 active:scale-[0.99]",
+                        isActive
+                          ? "bg-surface-container-low hover:bg-surface-container-highest"
+                          : "bg-surface-container-lowest hover:bg-surface-container-low",
+                      ].join(" ")}
+                    >
+                      {isActive && (
+                        <div className="absolute -left-1 top-0 bottom-0 w-1 bg-primary" />
+                      )}
+                      <div className="p-5 flex items-start gap-4 pr-14">
                       <div className="relative shrink-0">
                         <div
                           className="w-14 h-14 bg-tertiary-container flex items-center justify-center border border-tertiary-fixed-dim overflow-hidden"
@@ -222,7 +223,12 @@ export default async function HistoryPage() {
                         )}
                       </div>
                     </div>
-                  </Link>
+                    </Link>
+                    <DeleteSessionButton
+                      sessionId={s.id}
+                      characterName={s.character.name}
+                    />
+                  </div>
                 );
               })}
             </div>

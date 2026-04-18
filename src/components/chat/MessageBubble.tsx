@@ -81,8 +81,8 @@ export function MessageBubble({
             alt=""
             width={msg.image.width}
             height={msg.image.height}
+            sizes="(max-width: 430px) 75vw, 320px"
             className="w-full h-auto block"
-            unoptimized
           />
         </div>
       ) : null}

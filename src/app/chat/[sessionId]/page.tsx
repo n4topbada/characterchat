@@ -29,7 +29,8 @@ export default async function ChatPage({
         },
       },
       messages: {
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" },
+        take: 60,
         include: {
           imageAsset: {
             select: { blobUrl: true, width: true, height: true },
@@ -49,7 +50,7 @@ export default async function ChatPage({
         portraitUrl: s.character.assets[0]?.blobUrl ?? null,
         tagline: s.character.tagline,
       }}
-      initialMessages={s.messages.map((m) => ({
+      initialMessages={[...s.messages].reverse().map((m) => ({
         id: m.id,
         role: m.role,
         content: m.content,
