@@ -1,17 +1,16 @@
 "use client";
 
-// Caster 콘솔 — 좌: 대화, 우: 캐릭터 시트 (+ JSON 에디터).
+// Caster 콘솔 — 단일 컬럼 레이아웃.
 //
-// 흐름:
-//   1) 유저가 메시지를 보내면 SSE 로 서버와 연결.
-//   2) 서버는 delta / search / sources / source_image / patch / done 이벤트를 흘림.
-//   3) assistant 메시지 하단에 검색 소스의 OG 이미지를 중간 크기 썸네일 그리드로 렌더.
-//   4) 관리자가 썸네일의 "이 느낌" 을 클릭하면 해당 이미지 URL 을 imageRef 로 첨부해 다시 전송.
-//      서버가 그 이미지를 바이트로 불러와 Gemini 에 멀티모달로 넘기고, Caster 가 외형/배경 등을
-//      분석해 <patch> 로 시트를 업데이트.
-//   5) 시트가 충분히 채워지면 "커밋" 으로 Character 를 생성.
+// 구조 (위에서 아래):
+//   1) 스크롤 가능한 대화 영역 — 진입 시 고정 인사말 + 실제 메시지
+//   2) 접히는 "여태 채워진 정보" 드로어 — 드래프트 시트 + 커밋 버튼
+//   3) 입력창
 //
-// 이미지는 UI 전용 — DB 에는 소스 URL / title / domain 만 저장된다.
+// 기능:
+//   - <patch> / <choices> 는 라이브 표시에서 자동 숨김.
+//   - 서버가 보낸 choices 가 있으면 해당 assistant 메시지 아래에 버튼 그리드로 표시.
+//   - 검색 소스의 OG 이미지가 들어오면 썸네일 그리드로 표시, "이 느낌" 버튼으로 확정.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -25,6 +24,8 @@ import {
   AlertCircle,
   Check,
   X,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   CharacterSheet,
@@ -53,6 +54,8 @@ export type CasterMessage = {
   content: string;
   searchQueries?: string[];
   sources?: CasterSource[];
+  /** Caster 가 제시한 2~4 버튼 옵션. 클릭하면 그 문자열이 바로 다음 유저 입력이 된다. */
+  choices?: string[];
   /** 유저가 썸네일을 "이 느낌" 으로 확정했을 때 해당 메시지에 inline preview 로 깔린다. */
   previewImage?: string;
   createdAt: string;
@@ -68,9 +71,34 @@ type Props = {
   savedCharacterId: string | null;
 };
 
+// ---------- 고정 인사말 ----------
+// DB 에 저장하지 않고 항상 UI 가 보여 주는 "Caster 의 첫 인사".
+const GREETING_TEXT =
+  "안녕. 새 캐릭터를 같이 잡아보자. 어떤 방향부터 갈까?";
+const GREETING_CHOICES: string[] = [
+  "완전히 새로운 오리지널 캐릭터",
+  "실존 인물/작품 기반",
+  "장르·톤부터 정하자",
+];
+
+// ---------- 유틸 ----------
+
 function sanitizeDraft(raw: unknown): Draft | null {
   if (!raw || typeof raw !== "object") return null;
   return raw as Draft;
+}
+
+/**
+ * 라이브 표시 클린업 — 첫 <patch 또는 <choices 태그부터 끝까지 숨긴다.
+ * 스트리밍 중 덜 닫힌 블록이 보이는 걸 막는다.
+ */
+function stripMarkup(text: string): string {
+  let end = text.length;
+  const m1 = text.search(/<patch\b/i);
+  if (m1 >= 0 && m1 < end) end = m1;
+  const m2 = text.search(/<choices\b/i);
+  if (m2 >= 0 && m2 < end) end = m2;
+  return text.slice(0, end).replace(/\s+$/, "");
 }
 
 type RequiredField = {
@@ -128,6 +156,8 @@ function diffKeys(prev: Draft | null, next: Draft | null): string[] {
   return out;
 }
 
+// ========== 본체 ==========
+
 export function CasterConsole({
   runId,
   initialStatus,
@@ -148,6 +178,7 @@ export function CasterConsole({
   const [commitBusy, setCommitBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationIssues, setValidationIssues] = useState<string[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [jsonMode, setJsonMode] = useState(false);
   const [jsonText, setJsonText] = useState(() =>
     JSON.stringify(sanitizeDraft(initialDraft) ?? {}, null, 2),
@@ -177,9 +208,6 @@ export function CasterConsole({
 
   /**
    * 실제 전송 로직. text 와 선택적 imageRef/previewImage 를 받는다.
-   * - text: 유저 버블에 보일 본문
-   * - imageRef: 서버가 Gemini 에 멀티모달로 보낼 이미지 레퍼런스
-   * - previewImage: 유저 버블에 inline 썸네일로 보일 이미지 URL
    */
   const dispatch = useCallback(
     async (
@@ -205,6 +233,7 @@ export function CasterConsole({
         content: "",
         searchQueries: [],
         sources: [],
+        choices: [],
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMsg, modelInit]);
@@ -282,7 +311,6 @@ export function CasterConsole({
                   uri: string;
                   image: string;
                 };
-                // 해당 assistant 메시지의 sources 에서 uri 매칭 → image 덧붙임
                 setMessages((prev) =>
                   prev.map((m) => {
                     if (m.id !== modelId || !m.sources) return m;
@@ -293,6 +321,15 @@ export function CasterConsole({
                       ),
                     };
                   }),
+                );
+              } else if (event === "choices") {
+                const { choices: cs } = JSON.parse(data) as {
+                  choices: string[];
+                };
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === modelId ? { ...m, choices: cs } : m,
+                  ),
                 );
               } else if (event === "patch") {
                 const { draft: d } = JSON.parse(data) as { draft: Draft };
@@ -320,6 +357,13 @@ export function CasterConsole({
     setInput("");
     await dispatch(text);
   }, [input, dispatch]);
+
+  const sendChoice = useCallback(
+    async (choice: string) => {
+      await dispatch(choice);
+    },
+    [dispatch],
+  );
 
   const confirmImage = useCallback(
     async (src: CasterSource) => {
@@ -403,7 +447,10 @@ export function CasterConsole({
       });
       if (!r.ok) {
         const j = (await r.json().catch(() => null)) as
-          | { error?: string; issues?: { path: (string | number)[]; message: string }[] }
+          | {
+              error?: string;
+              issues?: { path: (string | number)[]; message: string }[];
+            }
           | null;
         if (j?.issues?.length) {
           setValidationIssues(
@@ -451,27 +498,197 @@ export function CasterConsole({
 
   const pct = computeCompletion(draft);
 
+  // 고정 인사말은 실제 유저 메시지가 오기 전까지 choices 를 포함해서 보여주고,
+  // 이후에는 메시지로만 (choices 제거해서 중복 버튼을 피한다).
+  const hasUserMessage = messages.some((m) => m.role === "user");
+
+  // ---------- render ----------
+
   return (
-    <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 pb-32 pt-4 lg:grid-cols-[minmax(0,1fr),420px]">
-      {/* LEFT: chat */}
-      <section className="flex min-h-[60vh] flex-col rounded-lg bg-surface-container-lowest shadow-card">
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          {messages.length === 0 ? (
-            <EmptyHint />
-          ) : (
-            messages.map((m) => (
-              <MessageBlock
-                key={m.id}
-                msg={m}
-                onConfirmImage={confirmImage}
-                onRejectImages={rejectImages}
-                disabled={streaming || status === "saved"}
-              />
-            ))
-          )}
+    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
+      {/* === 1) 스크롤 대화 영역 === */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="space-y-4">
+          {/* 고정 인사말 */}
+          <GreetingBlock
+            text={GREETING_TEXT}
+            choices={hasUserMessage ? [] : GREETING_CHOICES}
+            disabled={streaming || status === "saved"}
+            onChoose={sendChoice}
+          />
+
+          {/* 실제 메시지 */}
+          {messages.map((m) => (
+            <MessageBlock
+              key={m.id}
+              msg={m}
+              onConfirmImage={confirmImage}
+              onRejectImages={rejectImages}
+              onChoose={sendChoice}
+              disabled={streaming || status === "saved"}
+            />
+          ))}
           <div ref={bottomRef} />
         </div>
-        <div className="flex gap-2 border-t border-outline/20 p-3">
+      </div>
+
+      {/* === 2) 드로어 + 입력 (하단 고정) === */}
+      <div className="shrink-0 border-t border-outline/20 bg-surface-container-lowest">
+        {/* 드로어 토글 바 */}
+        <div className="flex items-center gap-2 px-3 pt-2">
+          <button
+            type="button"
+            onClick={() => setDrawerOpen((v) => !v)}
+            className="flex flex-1 items-center gap-2 rounded-md bg-surface-container px-3 py-2 text-left text-xs text-on-surface hover:bg-surface-container-high"
+            aria-expanded={drawerOpen}
+          >
+            {drawerOpen ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronUp size={14} />
+            )}
+            <span className="font-bold">
+              여태 채워진 정보 {draft?.name ? `— ${draft.name}` : ""}
+            </span>
+            <span className="ml-auto flex items-center gap-2">
+              <span className="h-1 w-16 overflow-hidden rounded-full bg-surface-container-lowest">
+                <span
+                  className="block h-full bg-primary transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </span>
+              <span className="tabular-nums text-[11px] text-on-surface-variant">
+                {pct}%
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={del}
+            disabled={commitBusy}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-on-surface-variant/60 hover:bg-surface-container hover:text-error"
+            aria-label="세션 삭제"
+            title="세션 삭제"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+
+        {/* 드로어 본문 */}
+        {drawerOpen ? (
+          <div className="max-h-[55vh] overflow-y-auto px-3 pb-3 pt-2">
+            <div className="flex items-center justify-between pb-2">
+              <h3 className="label-scholastic text-sm text-on-surface">
+                Character Sheet
+              </h3>
+              <button
+                type="button"
+                onClick={() => setJsonMode((v) => !v)}
+                className={[
+                  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px]",
+                  jsonMode
+                    ? "bg-primary text-on-primary"
+                    : "text-on-surface-variant hover:bg-surface-container",
+                ].join(" ")}
+                aria-label="JSON 편집 토글"
+              >
+                <Code2 size={12} />
+                JSON
+              </button>
+            </div>
+
+            {savedLink ? (
+              <a
+                href={savedLink}
+                className="mb-2 inline-flex items-center gap-1.5 text-xs font-bold text-primary"
+              >
+                <CheckCircle2 size={14} />
+                저장됨 · 캐릭터 편집 열기
+              </a>
+            ) : null}
+
+            {jsonMode ? (
+              <div className="flex flex-col gap-2">
+                <textarea
+                  value={jsonText}
+                  onChange={(e) => setJsonText(e.target.value)}
+                  spellCheck={false}
+                  rows={18}
+                  className="min-h-[30vh] rounded-md bg-surface-container p-3 font-mono text-[11px] leading-relaxed text-on-surface"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJsonText(JSON.stringify(draft ?? {}, null, 2));
+                      setJsonMode(false);
+                    }}
+                    className="rounded-md border border-outline/30 px-3 py-1.5 text-xs"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyJsonEdit}
+                    className="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-on-primary"
+                  >
+                    적용
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <CharacterSheet
+                draft={draft}
+                updatedKeys={updatedKeys}
+                completionPct={pct}
+              />
+            )}
+
+            {missing.length > 0 && !savedId ? (
+              <div className="mt-3 rounded-md border border-amber-300/50 bg-amber-50/50 p-2 text-[11px] text-amber-900">
+                커밋 전 필요: {missing.map((m) => m.label).join(", ")}
+              </div>
+            ) : null}
+
+            {validationIssues.length > 0 ? (
+              <ul className="mt-2 space-y-1 rounded-md border border-rose-200 bg-rose-50/70 p-2 text-[11px] text-rose-800">
+                {validationIssues.map((v, i) => (
+                  <li key={i} className="flex items-start gap-1">
+                    <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                    <span>{v}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {error ? (
+              <p className="mt-2 whitespace-pre-wrap text-xs text-error">
+                {error}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={commit}
+              disabled={
+                commitBusy ||
+                status === "saved" ||
+                !draft ||
+                missing.length > 0
+              }
+              className="mt-3 w-full rounded-md bg-primary py-2 text-sm font-bold text-on-primary disabled:opacity-50"
+            >
+              {status === "saved"
+                ? "저장 완료"
+                : commitBusy
+                  ? "저장 중..."
+                  : "커밋 (캐릭터 생성)"}
+            </button>
+          </div>
+        ) : null}
+
+        {/* === 3) 입력창 === */}
+        <div className="flex gap-2 border-t border-outline/10 p-3">
           <textarea
             rows={2}
             value={input}
@@ -496,150 +713,32 @@ export function CasterConsole({
             <Send size={16} />
           </button>
         </div>
-      </section>
-
-      {/* RIGHT: sheet + commit */}
-      <aside className="flex flex-col gap-3 rounded-lg bg-surface-container-lowest p-4 shadow-card">
-        <div className="flex items-center justify-between">
-          <h3 className="label-scholastic text-sm text-on-surface">
-            Character Sheet
-          </h3>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setJsonMode((v) => !v)}
-              className={[
-                "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px]",
-                jsonMode
-                  ? "bg-primary text-on-primary"
-                  : "text-on-surface-variant hover:bg-surface-container",
-              ].join(" ")}
-              aria-label="JSON 편집 토글"
-            >
-              <Code2 size={12} />
-              JSON
-            </button>
-            <button
-              type="button"
-              onClick={del}
-              disabled={commitBusy}
-              className="text-on-surface-variant/70 hover:text-error"
-              aria-label="세션 삭제"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        </div>
-
-        {savedLink ? (
-          <a
-            href={savedLink}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-primary"
-          >
-            <CheckCircle2 size={14} />
-            저장됨  캐릭터 편집 열기
-          </a>
-        ) : null}
-
-        {jsonMode ? (
-          <div className="flex flex-1 flex-col gap-2">
-            <textarea
-              value={jsonText}
-              onChange={(e) => setJsonText(e.target.value)}
-              spellCheck={false}
-              rows={22}
-              className="flex-1 min-h-[40vh] rounded-md bg-surface-container p-3 font-mono text-[11px] leading-relaxed text-on-surface"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setJsonText(JSON.stringify(draft ?? {}, null, 2));
-                  setJsonMode(false);
-                }}
-                className="rounded-md border border-outline/30 px-3 py-1.5 text-xs"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={applyJsonEdit}
-                className="rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-on-primary"
-              >
-                적용
-              </button>
-            </div>
-          </div>
-        ) : (
-          <CharacterSheet
-            draft={draft}
-            updatedKeys={updatedKeys}
-            completionPct={pct}
-          />
-        )}
-
-        {missing.length > 0 && !savedId ? (
-          <div className="rounded-md border border-amber-300/50 bg-amber-50/50 p-2 text-[11px] text-amber-900">
-            커밋 전 필요: {missing.map((m) => m.label).join(", ")}
-          </div>
-        ) : null}
-
-        {validationIssues.length > 0 ? (
-          <ul className="space-y-1 rounded-md border border-rose-200 bg-rose-50/70 p-2 text-[11px] text-rose-800">
-            {validationIssues.map((v, i) => (
-              <li key={i} className="flex items-start gap-1">
-                <AlertCircle size={12} className="mt-0.5 shrink-0" />
-                <span>{v}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-
-        {error ? (
-          <p className="whitespace-pre-wrap text-xs text-error">{error}</p>
-        ) : null}
-
-        <button
-          type="button"
-          onClick={commit}
-          disabled={
-            commitBusy || status === "saved" || !draft || missing.length > 0
-          }
-          className="rounded-md bg-primary py-2 text-sm font-bold text-on-primary disabled:opacity-50"
-        >
-          {status === "saved"
-            ? "저장 완료"
-            : commitBusy
-              ? "저장 중..."
-              : "커밋 (캐릭터 생성)"}
-        </button>
-      </aside>
+      </div>
     </div>
   );
 }
 
-// ---------- 서브 컴포넌트 ----------
+// ========== 서브 컴포넌트 ==========
 
-function EmptyHint() {
+function GreetingBlock({
+  text,
+  choices,
+  disabled,
+  onChoose,
+}: {
+  text: string;
+  choices: string[];
+  disabled: boolean;
+  onChoose: (c: string) => void | Promise<void>;
+}) {
   return (
-    <div className="rounded-md border border-dashed border-outline/30 p-4 text-sm text-on-surface-variant">
-      <p className="mb-2 font-bold">Caster 에게 새 캐릭터의 컨셉을 설명하세요.</p>
-      <ul className="space-y-1 text-xs">
-        <li>
-          &ldquo;조용한 사서, 20대 후반, 오래된 책으로 세상을 읽는 사람.&rdquo;
-        </li>
-        <li>
-          &ldquo;미래도시 소방관. 쾌활한 성격. 항상 라디오를 듣고 다녀.&rdquo;
-        </li>
-        <li>
-          &ldquo;셜록 홈즈 같은 추리 캐릭터, 현대 서울 배경.&rdquo;
-        </li>
-      </ul>
-      <p className="mt-2 text-[11px] text-on-surface-variant/80">
-        Caster 가 한 번에 한 가지씩 물어가며 시트를 채웁니다. 필요하면 Google
-        검색으로 사실을 확인하고, 외형 단계에서는 썸네일을 보여주니 "이 느낌"
-        을 눌러 확정해 주세요.
-      </p>
+    <div className="space-y-2">
+      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface">
+        {text}
+      </div>
+      {choices.length > 0 ? (
+        <ChoiceButtons items={choices} disabled={disabled} onChoose={onChoose} />
+      ) : null}
     </div>
   );
 }
@@ -648,18 +747,20 @@ function MessageBlock({
   msg,
   onConfirmImage,
   onRejectImages,
+  onChoose,
   disabled,
 }: {
   msg: CasterMessage;
   onConfirmImage: (s: CasterSource) => void | Promise<void>;
   onRejectImages: () => void | Promise<void>;
+  onChoose: (c: string) => void | Promise<void>;
   disabled: boolean;
 }) {
   const isUser = msg.role === "user";
-  const sourcesWithImages =
-    msg.sources?.filter((s) => !!s.image) ?? [];
-  const sourcesWithoutImages =
-    msg.sources?.filter((s) => !s.image) ?? [];
+  const visibleText = isUser ? msg.content : stripMarkup(msg.content);
+  const sourcesWithImages = msg.sources?.filter((s) => !!s.image) ?? [];
+  const sourcesWithoutImages = msg.sources?.filter((s) => !s.image) ?? [];
+  const choices = msg.choices ?? [];
 
   return (
     <div className={isUser ? "flex flex-col items-end gap-1.5" : "space-y-1.5"}>
@@ -686,7 +787,7 @@ function MessageBlock({
             : "mr-auto bg-surface-container text-on-surface",
         ].join(" ")}
       >
-        {msg.content || (!isUser ? "…" : "")}
+        {visibleText || (!isUser ? "…" : "")}
       </div>
 
       {/* user bubble: 확정한 썸네일 인라인 프리뷰 */}
@@ -698,6 +799,11 @@ function MessageBlock({
           referrerPolicy="no-referrer"
           className="h-28 w-28 rounded-md object-cover ring-2 ring-primary/60"
         />
+      ) : null}
+
+      {/* assistant: 선택지 버튼 */}
+      {!isUser && choices.length > 0 ? (
+        <ChoiceButtons items={choices} disabled={disabled} onChoose={onChoose} />
       ) : null}
 
       {/* assistant: 이미지가 달린 썸네일 그리드 */}
@@ -722,8 +828,7 @@ function MessageBlock({
             disabled={disabled}
             className="inline-flex items-center gap-1 rounded-md border border-outline/30 px-2 py-1 text-[11px] text-on-surface-variant hover:bg-surface-container disabled:opacity-50"
           >
-            <X size={11} />
-            이 중엔 없어  다른 느낌
+            <X size={11} />이 중엔 없어 · 다른 느낌
           </button>
         </div>
       ) : null}
@@ -748,6 +853,32 @@ function MessageBlock({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ChoiceButtons({
+  items,
+  disabled,
+  onChoose,
+}: {
+  items: string[];
+  disabled: boolean;
+  onChoose: (c: string) => void | Promise<void>;
+}) {
+  return (
+    <div className="flex max-w-[85%] flex-wrap gap-1.5">
+      {items.map((c, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => void onChoose(c)}
+          disabled={disabled}
+          className="rounded-full border border-primary/40 bg-primary/5 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
+        >
+          {c}
+        </button>
+      ))}
     </div>
   );
 }
@@ -798,8 +929,7 @@ function ThumbCard({
         disabled={disabled}
         className="absolute right-1 top-1 inline-flex items-center gap-1 rounded-md bg-primary/95 px-1.5 py-1 text-[10px] font-bold text-on-primary shadow-sm opacity-90 transition-opacity hover:opacity-100 disabled:opacity-40"
       >
-        <Check size={11} />
-        이 느낌
+        <Check size={11} />이 느낌
       </button>
     </div>
   );

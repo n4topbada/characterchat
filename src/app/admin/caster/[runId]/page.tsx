@@ -34,6 +34,7 @@ export default async function CasterRunPage({
       body?: string;
       searchQueries?: string[];
       sources?: { uri: string; title?: string; domain?: string }[];
+      choices?: string[];
     };
     return {
       id: e.id,
@@ -41,12 +42,13 @@ export default async function CasterRunPage({
       content: p.body ?? p.content ?? "",
       searchQueries: p.searchQueries ?? [],
       sources: p.sources ?? [],
+      choices: p.choices ?? [],
       createdAt: e.createdAt.toISOString(),
     };
   });
 
   return (
-    <main className="min-h-dvh bg-surface">
+    <main className="flex h-dvh flex-col overflow-hidden bg-surface">
       <TopAppBar title="Caster" subtitle={`run · ${run.status}`} />
       <CasterConsole
         runId={run.id}

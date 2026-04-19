@@ -13,6 +13,7 @@
 //   sources         { sources: {uri,title,domain}[] }
 //   source_image    { uri, image }              # OG 이미지 fetch 완료 시 (세션 전용, DB 저장 X)
 //   patch           { patch, draft }            # 누적된 전체 드래프트
+//   choices         { choices: string[] }       # 버튼 UI 용 2~4 옵션 (있을 때만)
 //   error           { message }
 //   done            { ok }
 //
@@ -29,6 +30,7 @@ import { MODELS } from "@/lib/gemini/client";
 import {
   CASTER_SYSTEM,
   extractPatch,
+  extractChoices,
   mergePatch,
   emptyDraft,
   renderDraftForPrompt,
@@ -210,12 +212,14 @@ export async function POST(
     }
 
     // <patch> 파싱. 없으면 레거시 ```json``` 한 번 더 시도.
-    const { body, patch: patchBlock } = extractPatch(full);
+    const { body: afterPatch, patch: patchBlock } = extractPatch(full);
     const patch = patchBlock ?? extractLegacyDraft(full);
-    const visibleBody = patchBlock ? body : full; // 레거시 형태면 본문 그대로 저장
+    const bodyAfterPatch = patchBlock ? afterPatch : full; // 레거시 형태면 본문 그대로
+    // <choices> 도 body 에서 제거해 DB 에 깔끔한 본문만 남긴다.
+    const { body: visibleBody, choices } = extractChoices(bodyAfterPatch);
 
     // model_msg 이벤트 — content 에는 유저가 볼 본문을 저장하고,
-    // 원본과 부수 메타(검색 쿼리/소스)는 payload 에 함께 남긴다.
+    // 원본과 부수 메타(검색 쿼리/소스/선택지)는 payload 에 함께 남긴다.
     await prisma.casterEvent.create({
       data: {
         id: newId(),
@@ -227,9 +231,14 @@ export async function POST(
           fullText: full,
           searchQueries,
           sources: sourcesAcc,
+          choices,
         } as unknown as object,
       },
     });
+
+    if (choices.length > 0) {
+      send("choices", { choices });
+    }
 
     // 드래프트 갱신
     if (patch) {
