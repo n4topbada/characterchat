@@ -761,7 +761,19 @@ export function CasterConsole({
           </div>
         ) : null}
 
-        {/* === 3) 입력창 === */}
+        {/* === 3) 초안 스트립 — composer 바로 위. ===
+           1단 뎁스에서 항상 보이는 하단 패널. 다른 초안으로 스크롤 이동,
+           맨 뒤의 "+" 슬롯은 새 초안을 즉석에서 생성한다. composer 아래에
+           두면 모바일에서 키보드에 묻히거나 "끝" 으로 오인돼 안 보이므로
+           반드시 입력창 위에 올린다. */}
+        <DraftStrip
+          slots={slots}
+          activeId={runId}
+          onNewDraft={startNewDraft}
+          newBusy={newBusy}
+        />
+
+        {/* === 4) 입력창 === */}
         <div className="flex gap-2 border-t border-outline/10 p-3">
           <textarea
             rows={2}
@@ -787,16 +799,6 @@ export function CasterConsole({
             <Send size={16} />
           </button>
         </div>
-
-        {/* === 4) 초안 스트립 (하단 고정 패널) ===
-           1단 뎁스에서 항상 보이는 하단 패널. 다른 초안으로 스크롤 이동, 맨 뒤의
-           "+" 슬롯은 새 초안을 즉석에서 생성한다. */}
-        <DraftStrip
-          slots={slots}
-          activeId={runId}
-          onNewDraft={startNewDraft}
-          newBusy={newBusy}
-        />
       </div>
     </div>
   );
@@ -814,13 +816,16 @@ function DraftStrip({
   newBusy: boolean;
 }) {
   return (
-    <div className="border-t border-outline/20 bg-surface-container-lowest">
+    <div className="border-t border-outline/20 bg-surface-container/40">
       <div className="flex items-center justify-between px-3 pt-2 pb-1">
         <p className="label-mono text-on-surface-variant text-[10px]">
-          초안 · {slots.length}
+          내 초안 · {slots.length}
+        </p>
+        <p className="text-[10px] text-on-surface-variant/70">
+          좌우로 스크롤 → 다른 초안 선택
         </p>
       </div>
-      <div className="flex gap-2 overflow-x-auto px-3 pb-3 scrollbar-thin">
+      <div className="flex gap-2 overflow-x-auto px-3 pb-2 scrollbar-thin">
         {slots.map((s) => (
           <DraftSlotCard
             key={s.id}
@@ -832,10 +837,10 @@ function DraftStrip({
           type="button"
           onClick={() => void onNewDraft()}
           disabled={newBusy}
-          className="shrink-0 w-36 h-[84px] rounded-md border-2 border-dashed border-primary/40 bg-primary/5 text-primary flex flex-col items-center justify-center gap-1 text-xs font-bold hover:bg-primary/10 active:brightness-90 disabled:opacity-50 transition-colors"
+          className="shrink-0 w-32 h-[72px] rounded-md border-2 border-dashed border-primary/40 bg-primary/5 text-primary flex flex-col items-center justify-center gap-1 text-xs font-bold hover:bg-primary/10 active:brightness-90 disabled:opacity-50 transition-colors"
           aria-label="새 초안"
         >
-          <Plus size={18} strokeWidth={2.5} />
+          <Plus size={16} strokeWidth={2.5} />
           <span>새 초안</span>
         </button>
       </div>
@@ -861,9 +866,9 @@ function DraftSlotCard({
     <Link
       href={{ pathname: `/admin/caster/${slot.id}` }}
       className={[
-        "shrink-0 w-44 h-[84px] rounded-md border p-2 flex flex-col gap-1 transition-colors active:brightness-95",
+        "shrink-0 w-40 h-[72px] rounded-md border p-2 flex flex-col gap-1 transition-colors active:brightness-95",
         active
-          ? "border-primary bg-primary/10 text-on-surface shadow-tinted-sm"
+          ? "border-primary bg-primary/15 text-on-surface ring-2 ring-primary/40 ring-offset-1 ring-offset-surface-container"
           : "border-outline/30 bg-surface-container-lowest hover:bg-surface-container text-on-surface",
       ].join(" ")}
       aria-current={active ? "page" : undefined}
@@ -875,6 +880,11 @@ function DraftSlotCard({
           className={active ? "text-primary shrink-0" : "text-primary/60 shrink-0"}
         />
         <span className="truncate text-xs font-bold">{label}</span>
+        {active ? (
+          <span className="ml-auto shrink-0 rounded-sm bg-primary px-1 text-[9px] font-bold text-on-primary">
+            현재
+          </span>
+        ) : null}
       </div>
       {slot.tagline ? (
         <p className="text-[10px] text-on-surface-variant line-clamp-2 leading-snug">
