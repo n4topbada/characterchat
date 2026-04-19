@@ -33,25 +33,56 @@ export function gemini(): GoogleGenAI {
 }
 
 /**
- * 호출을 감싸서 transient 오류(quota/429/5xx/invalid_api_key) 시 다음 키로 재시도.
- * 스트리밍은 최초 request 수립까지만 재시도하고, 이후 chunk 루프는 그대로 넘어간다.
+ * 호출을 감싸서 transient 오류(quota/429/5xx/invalid_api_key) 시 재시도 + 키 폴백.
+ *
+ * 재시도 전략:
+ *   - 각 키 내부에서 PER_KEY_RETRIES 만큼 exponential backoff 로 재시도
+ *     (503 Service Unavailable 처럼 "잠깐 혼잡" 상태는 몇 백 ms 뒤면 풀리는 경우가 많다)
+ *   - 키 내부 재시도 소진 후에도 transient 면 다음 키로 폴백
+ *   - 영구 오류(400/401 중 권한 문제가 아닌 것)는 즉시 throw
+ *
+ * 스트리밍은 최초 request 수립까지만 이 레이어가 감싼다. 스트림 chunk 루프
+ * 중간에 터지는 에러는 라우트 쪽 runAttempt 재시도로 처리.
  */
+const PER_KEY_RETRIES = 2; // 초기 시도 + 2회 재시도 = 키당 최대 3회
+const BACKOFF_MS = [400, 1200]; // attempt 0 실패 후 400ms, attempt 1 실패 후 1200ms
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 export async function withGeminiFallback<T>(
   fn: (ai: GoogleGenAI, keyIndex: number) => Promise<T>,
 ): Promise<T> {
   const keys = readKeys();
   let lastErr: unknown;
   for (let i = 0; i < keys.length; i++) {
-    try {
-      return await fn(clientFor(keys[i]), i);
-    } catch (e) {
-      lastErr = e;
-      const transient = isTransient(e);
-      const hasNext = i < keys.length - 1;
-      if (!transient || !hasNext) throw e;
-      console.warn(
-        `[gemini] key#${i} failed (${describeErr(e)}), falling back to key#${i + 1}`,
-      );
+    for (let attempt = 0; attempt <= PER_KEY_RETRIES; attempt++) {
+      try {
+        return await fn(clientFor(keys[i]), i);
+      } catch (e) {
+        lastErr = e;
+        const transient = isTransient(e);
+        if (!transient) throw e;
+
+        const hasMoreAttempts = attempt < PER_KEY_RETRIES;
+        const hasNextKey = i < keys.length - 1;
+        if (!hasMoreAttempts && !hasNextKey) throw e;
+
+        if (hasMoreAttempts) {
+          const wait = BACKOFF_MS[attempt] ?? BACKOFF_MS[BACKOFF_MS.length - 1];
+          console.warn(
+            `[gemini] key#${i} attempt${attempt + 1} failed (${describeErr(e)}), retrying in ${wait}ms`,
+          );
+          await sleep(wait);
+        } else {
+          // 키 내부 재시도 소진 → 다음 키로 폴백
+          console.warn(
+            `[gemini] key#${i} exhausted (${describeErr(e)}), falling back to key#${i + 1}`,
+          );
+          break; // attempt 루프 탈출 → 다음 키로
+        }
+      }
     }
   }
   throw lastErr;

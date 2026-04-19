@@ -240,7 +240,8 @@ export async function POST(
 
     let full = "";
     try {
-      const MAX_ATTEMPTS = 2;
+      const MAX_ATTEMPTS = 3; // 초기 + 재시도 2회
+      const RETRY_BACKOFF_MS = [500, 1500]; // attempt 1 실패 → 500ms, 2 실패 → 1500ms
       let lastErr: unknown = null;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
@@ -255,21 +256,26 @@ export async function POST(
               `[chat] attempt ${attempt} produced empty/blocked output, retrying`,
             );
             send("retry", { reason: "empty_or_blocked" });
+            const wait = RETRY_BACKOFF_MS[attempt - 1] ?? 1500;
+            await new Promise((r) => setTimeout(r, wait));
           } else {
             // 마지막 시도도 빈 응답이면 그대로 채택 (에러보다는 낫다)
             full = out;
           }
         } catch (err) {
           lastErr = err;
+          const msg = err instanceof Error ? err.message : String(err);
           if (attempt < MAX_ATTEMPTS) {
             console.warn(
-              `[chat] attempt ${attempt} threw: ${
-                err instanceof Error ? err.message : String(err)
-              }, retrying`,
+              `[chat] attempt ${attempt} threw: ${msg}, retrying`,
             );
+            // 503/5xx 라면 사용자 친화 메시지로 치환
+            const isUpstreamBusy = /5\d\d|overload|unavailable|503/i.test(msg);
             send("retry", {
-              reason: err instanceof Error ? err.message : "error",
+              reason: isUpstreamBusy ? "upstream_busy" : msg,
             });
+            const wait = RETRY_BACKOFF_MS[attempt - 1] ?? 1500;
+            await new Promise((r) => setTimeout(r, wait));
           } else {
             throw err;
           }
@@ -355,9 +361,14 @@ export async function POST(
 
       send("done", { id: messageId });
     } catch (err) {
-      send("error", {
-        message: err instanceof Error ? err.message : "stream_failed",
-      });
+      const raw = err instanceof Error ? err.message : String(err);
+      // 업스트림(Gemini) 이 혼잡하면 친화적 메시지로 바꿔 전달.
+      const isUpstreamBusy = /5\d\d|overload|unavailable|503|fetch failed/i.test(raw);
+      const message = isUpstreamBusy
+        ? "모델 서버가 잠시 혼잡해요. 잠깐 뒤에 다시 시도해 주세요."
+        : raw || "stream_failed";
+      console.error(`[chat] stream failed: ${raw}`);
+      send("error", { message });
     }
   });
 }

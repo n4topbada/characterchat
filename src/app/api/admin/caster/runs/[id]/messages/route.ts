@@ -222,8 +222,12 @@ export async function POST(
       }
     } catch (err) {
       console.error("[caster] stream error", err);
+      const raw = err instanceof Error ? err.message : String(err);
+      const isUpstreamBusy = /5\d\d|overload|unavailable|503|fetch failed/i.test(raw);
       send("error", {
-        message: err instanceof Error ? err.message : String(err),
+        message: isUpstreamBusy
+          ? "모델 서버가 잠시 혼잡해요. 잠깐 뒤에 다시 시도해 주세요."
+          : raw,
       });
       return;
     }
