@@ -3,10 +3,20 @@
 //   1) Google 검색 그라운딩을 켜서 실존 인물/작품을 사실 기반으로 참조하고
 //   2) 텍스트 델타와 그라운딩 메타데이터(검색 쿼리, 소스 링크)를 각각 이벤트로 흘려준다.
 //
-// 안전 설정은 일반 채팅과 달리 Gemini 기본값을 사용한다. Caster 는
-// 관리자 전용 설계 도구라 크리에이티브 필터는 과하지 않아도 된다.
+// 안전 설정은 일반 채팅(streamChat)과 동일하게 4개 카테고리 모두 BLOCK_NONE.
+// Gemini 기본값(BLOCK_MEDIUM_AND_ABOVE)은 "외형/복장/분위기" 같은 크리에이티브
+// 턴에서 빈 응답을 유발한다. Caster 는 관리자 전용 설계 도구이므로 차단은
+// persona redLines + [금지] 블록에서 한다.
 
+import { HarmBlockThreshold, HarmCategory } from "@google/genai";
 import { withGeminiFallback } from "@/lib/gemini/client";
+
+const PERMISSIVE_SAFETY = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
 
 // 멀티모달 대응 — 턴은 parts 배열로 구성된다 (텍스트 + 인라인 이미지).
 export type CasterContentPart =
@@ -94,8 +104,9 @@ export async function* streamCaster(
       contents,
       config: {
         systemInstruction: args.systemInstruction,
-        temperature: args.temperature ?? 0.7,
+        temperature: args.temperature ?? 1.5,
         maxOutputTokens: args.maxOutputTokens ?? 2048,
+        safetySettings: PERMISSIVE_SAFETY,
         ...(tools ? { tools } : {}),
       },
     }),

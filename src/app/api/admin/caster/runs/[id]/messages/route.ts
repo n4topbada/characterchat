@@ -197,7 +197,9 @@ export async function POST(
         systemInstruction,
         history,
         enableSearch: true,
-        temperature: 0.7,
+        // 외형·말투·세계관 같은 크리에이티브 탐색에서 넓게 펼치도록 고온.
+        // 안전 필터는 streamCaster 쪽에서 BLOCK_NONE × 4 로 걸어놨다.
+        temperature: 1.5,
         maxOutputTokens: 2048,
       })) {
         if (ev.type === "text") {
