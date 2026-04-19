@@ -19,19 +19,16 @@ type TabDef = {
 };
 
 /**
- * Five tabs — Scholastic Archive taxonomy.
- *   COLLECTION (feed)  · grid of archive items
- *   DIALOGUE (history) · chat sessions
- *   INITIATE (create)  · parallelogram CTA — Caster entry
- *   INDEX (find)       · vertical carousel of characters
- *   PROTOCOL (me)      · operator profile
+ * 5 탭 — 좌→우 순서로 피드 · 대화 · 만들기 · 찾기 · 내정보.
+ * 이전에는 COLLECTION / DIALOGUE / INITIATE / INDEX / PROTOCOL 처럼
+ * 기술적인 아카이브 코드명으로 표시했는데, 유저에게 불친절하여 한글 라벨로 교체.
  */
 const TABS: TabDef[] = [
-  { slug: "feed", href: "/feed", code: "COLLECTION", label: "COLLECTION", Icon: LayoutGrid },
-  { slug: "history", href: "/history", code: "DIALOGUE", label: "DIALOGUE", Icon: MessageSquare },
-  { slug: "create", href: "/create", code: "INITIATE", label: "INITIATE", Icon: Plus },
-  { slug: "find", href: "/find", code: "INDEX", label: "INDEX", Icon: Network },
-  { slug: "me", href: "/me", code: "PROTOCOL", label: "PROTOCOL", Icon: CircuitBoard },
+  { slug: "feed", href: "/feed", code: "feed", label: "피드", Icon: LayoutGrid },
+  { slug: "history", href: "/history", code: "history", label: "대화", Icon: MessageSquare },
+  { slug: "create", href: "/create", code: "create", label: "만들기", Icon: Plus },
+  { slug: "find", href: "/find", code: "find", label: "찾기", Icon: Network },
+  { slug: "me", href: "/me", code: "me", label: "내 정보", Icon: CircuitBoard },
 ];
 
 export function BottomTabBar() {

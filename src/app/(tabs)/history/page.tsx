@@ -42,15 +42,16 @@ function pickLastBotSpeech(
 function formatTimestamp(d: Date): string {
   const diff = Date.now() - d.getTime();
   const min = Math.floor(diff / 60000);
-  if (min < 1) return "NOW";
-  if (min < 60) return `${min}M_AGO`;
+  if (min < 1) return "방금";
+  if (min < 60) return `${min}분 전`;
   const h = Math.floor(min / 60);
-  if (h < 24) return `${h}H_AGO`;
+  if (h < 24) return `${h}시간 전`;
   const day = Math.floor(h / 24);
-  if (day < 7) return `${day}D_AGO`;
-  return d
-    .toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
-    .toUpperCase();
+  if (day < 7) return `${day}일 전`;
+  return d.toLocaleDateString("ko-KR", {
+    month: "short",
+    day: "2-digit",
+  });
 }
 
 export default async function HistoryPage() {
@@ -82,39 +83,11 @@ export default async function HistoryPage() {
 
   return (
     <ScrollPage>
-      <TopAppBar title="DIALOGUE" subtitle="ARCHIVAL_SESSIONS" />
+      <TopAppBar title="대화" />
       <main className="pb-6 diagonal-bg relative">
         <div className="absolute inset-0 dot-pattern opacity-40 pointer-events-none" />
 
-        <div className="max-w-2xl mx-auto px-5 relative z-10">
-          {/* Section header */}
-          <div className="flex items-end justify-between mb-8">
-            <div>
-              <span className="label-scholastic text-primary/60">Directory</span>
-              <h2 className="font-headline text-3xl font-bold tracking-tight text-on-surface">
-                Archival Sessions
-              </h2>
-            </div>
-            <div className="hidden sm:flex gap-2">
-              <span
-                className="px-3 py-1 bg-secondary-container text-on-secondary-fixed label-scholastic-xs"
-                style={{ transform: "skewX(-12deg)" }}
-              >
-                <span style={{ transform: "skewX(12deg)", display: "inline-block" }}>
-                  LIVE_FEED
-                </span>
-              </span>
-              <span
-                className="px-3 py-1 bg-surface-container-high text-on-surface-variant label-scholastic-xs"
-                style={{ transform: "skewX(-12deg)" }}
-              >
-                <span style={{ transform: "skewX(12deg)", display: "inline-block" }}>
-                  V_SEQ.{String(rows.length).padStart(2, "0")}
-                </span>
-              </span>
-            </div>
-          </div>
-
+        <div className="max-w-2xl mx-auto px-5 relative z-10 pt-4">
           {rows.length === 0 ? (
             <div className="mt-12 px-4 py-12 bg-surface-container-low rounded-lg border-l-4 border-primary flex flex-col items-center text-center">
               <div className="w-16 h-16 bg-tertiary-container flex items-center justify-center mb-4 rounded-md">
@@ -124,27 +97,28 @@ export default async function HistoryPage() {
                   className="text-on-tertiary-container"
                 />
               </div>
-              <span className="label-scholastic-xs text-primary/70 mb-2">
-                NULL_SET
-              </span>
               <p className="font-headline text-xl font-bold text-on-surface mb-2">
-                NO ACTIVE SESSIONS
+                아직 대화가 없어요
               </p>
               <p className="text-on-surface-variant text-sm leading-relaxed">
                 <Link
                   href={"/find" as "/find"}
                   className="text-primary font-bold underline decoration-secondary-fixed decoration-2 underline-offset-4"
                 >
-                  INDEX
+                  찾기
                 </Link>
-                {" 탭에서 SCHOLAR를 선택해 대화를 개시하세요."}
+                {" 탭에서 대화할 상대를 골라보세요."}
               </p>
             </div>
           ) : (
             <div className="grid gap-5">
               {rows.map((s, idx) => {
                 const preview = pickLastBotSpeech(s.messages);
-                const portrait = s.character.assets[0]?.blobUrl ?? null;
+                const portraitAsset = s.character.assets[0];
+                const portrait =
+                  portraitAsset?.animationUrl ?? portraitAsset?.blobUrl ?? null;
+                const portraitIsAnimated =
+                  !!portrait && /\/portraits\/ani\//.test(portrait);
                 const isActive = idx === 0;
                 return (
                   <div key={s.id} className="relative">
@@ -174,6 +148,7 @@ export default async function HistoryPage() {
                                 width={56}
                                 height={56}
                                 className="w-full h-full object-cover"
+                                unoptimized={portraitIsAnimated}
                               />
                             ) : (
                               <Network
@@ -211,16 +186,9 @@ export default async function HistoryPage() {
                           >
                             {preview
                               ? preview.slice(0, 180)
-                              : "아직 대사가 없습니다."}
+                              : "아직 대화가 시작되지 않았어요."}
                           </p>
                         </div>
-                        {isActive && (
-                          <div className="mt-2 flex gap-2">
-                            <span className="px-2 py-0.5 bg-tertiary-container text-on-tertiary-container label-scholastic-xs">
-                              ACTIVE_STREAM
-                            </span>
-                          </div>
-                        )}
                       </div>
                     </div>
                     </Link>

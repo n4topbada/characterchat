@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { PersonaEditor, type PersonaEditable } from "./PersonaEditor";
 import { KnowledgeEditor } from "./KnowledgeEditor";
+import { PromptPreview } from "./PromptPreview";
 
 type Character = {
   id: string;
@@ -40,7 +41,7 @@ type Character = {
   }[];
 };
 
-type Tab = "overview" | "persona" | "knowledge" | "assets";
+type Tab = "overview" | "persona" | "knowledge" | "prompt" | "assets";
 
 export function AdminCharacterEditor({
   character,
@@ -145,23 +146,23 @@ export function AdminCharacterEditor({
           </button>
         </div>
         <nav className="flex gap-1 px-4 pb-2">
-          {(["overview", "persona", "knowledge", "assets"] as Tab[]).map(
-            (t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={[
-                  "rounded-md px-3 py-1.5 text-xs font-semibold capitalize",
-                  tab === t
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-200",
-                ].join(" ")}
-              >
-                {t}
-              </button>
-            ),
-          )}
+          {(
+            ["overview", "persona", "knowledge", "prompt", "assets"] as Tab[]
+          ).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={[
+                "rounded-md px-3 py-1.5 text-xs font-semibold capitalize",
+                tab === t
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-200",
+              ].join(" ")}
+            >
+              {t}
+            </button>
+          ))}
         </nav>
       </header>
 
@@ -261,6 +262,8 @@ export function AdminCharacterEditor({
         {tab === "knowledge" && (
           <KnowledgeEditor characterId={character.id} />
         )}
+
+        {tab === "prompt" && <PromptPreview characterId={character.id} />}
 
         {tab === "assets" && (
           <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">

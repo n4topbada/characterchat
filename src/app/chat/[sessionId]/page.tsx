@@ -47,7 +47,10 @@ export default async function ChatPage({
       sessionId={s.id}
       character={{
         name: s.character.name,
-        portraitUrl: s.character.assets[0]?.blobUrl ?? null,
+        portraitUrl:
+          s.character.assets[0]?.animationUrl ??
+          s.character.assets[0]?.blobUrl ??
+          null,
         tagline: s.character.tagline,
       }}
       initialMessages={[...s.messages].reverse().map((m) => ({

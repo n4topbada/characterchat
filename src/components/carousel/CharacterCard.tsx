@@ -16,14 +16,12 @@ const FALLBACK_BG =
   "linear-gradient(135deg, #3a5f94 0%, #a7c8ff 45%, #cee9d9 100%)";
 
 /**
- * Character card — Scholastic Archive "Node" style.
- *  - Asymmetric portrait with slant-cut clip.
- *  - Tactical metadata row (mono label + node ID).
- *  - Parallelogram CTA ("INITIATE DIALOGUE").
+ * Character card — Scholastic Archive 스타일 풀스크린 카드.
+ * - 배경에 포트레이트, 하단에 이름·한 줄 태그라인·태그 칩·CTA.
+ * - 이전에 있던 SCHOLAR_NNN / REF_ARCHIVE.V1 같은 내부 식별자 라벨은
+ *   유저 사이드로 노출되어 혼란을 주어 제거했다.
  */
-export function CharacterCard({ c, index }: { c: CarouselCharacter; index: number }) {
-  const nodeId = String(index + 1).padStart(3, "0");
-
+export function CharacterCard({ c }: { c: CarouselCharacter; index: number }) {
   return (
     <section className="h-full w-full snap-start relative flex flex-col px-5 pt-6 pb-6">
       {/* Portrait frame */}
@@ -36,6 +34,9 @@ export function CharacterCard({ c, index }: { c: CarouselCharacter; index: numbe
             className="object-cover"
             priority
             sizes="(max-width: 768px) 100vw, 480px"
+            // animated webp (portraits/ani/*.webp) 는 Next 최적화가 정지 프레임으로 변환해버려
+            // 애니메이션이 사라진다. URL 패턴으로 판별해 그때만 최적화 우회.
+            unoptimized={/\/portraits\/ani\//.test(c.portraitUrl)}
           />
         ) : (
           <div
@@ -46,15 +47,6 @@ export function CharacterCard({ c, index }: { c: CarouselCharacter; index: numbe
         )}
         <div className="absolute inset-0 diagonal-bg opacity-40" />
         <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/40 to-transparent" />
-      </div>
-
-      {/* Archive frame corner markers */}
-      <div className="absolute top-24 left-5 right-5 flex items-center justify-between z-10 pointer-events-none">
-        <span className="label-mono text-primary/70">NODE_{nodeId}</span>
-        <span className="label-mono text-primary/70">REF_ARCHIVE.V1</span>
-      </div>
-      <div className="absolute top-28 left-5 right-5 z-10 pointer-events-none">
-        <div className="h-px w-full bg-primary/15" />
       </div>
 
       {/* Geometric frame decoration (top-right, bottom-left corners) */}
@@ -68,21 +60,6 @@ export function CharacterCard({ c, index }: { c: CarouselCharacter; index: numbe
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
 
           <div className="p-6 pl-7">
-            {/* Meta row */}
-            <div className="flex items-center gap-2 mb-4">
-              <span
-                className="label-scholastic-xs px-2 py-0.5 bg-primary text-on-primary"
-                style={{ transform: "skewX(-12deg)" }}
-              >
-                <span style={{ transform: "skewX(12deg)", display: "inline-block" }}>
-                  SCHOLAR_{nodeId}
-                </span>
-              </span>
-              <span className="label-mono text-on-surface-variant/60">
-                STATUS: INDEXED
-              </span>
-            </div>
-
             {/* Name */}
             <div className="flex items-start justify-between gap-3 mb-3">
               <h2 className="font-headline text-3xl font-bold text-on-surface leading-tight tracking-tight truncate">
@@ -129,8 +106,8 @@ export function CharacterCard({ c, index }: { c: CarouselCharacter; index: numbe
               className="relative group flex items-center justify-center overflow-hidden h-14 active:scale-[0.98] transition-transform"
             >
               <div className="absolute inset-0 btn-cta-gradient group-hover:brightness-110 transition-all" style={{ transform: "skewX(-12deg)" }} />
-              <div className="relative flex items-center gap-3 text-on-primary font-headline font-bold uppercase tracking-[0.2em] text-xs">
-                <span>INITIATE DIALOGUE</span>
+              <div className="relative flex items-center gap-3 text-on-primary font-headline font-bold tracking-[0.2em] text-sm">
+                <span>대화 시작</span>
                 <ArrowRight size={16} strokeWidth={2.5} />
               </div>
             </Link>

@@ -27,9 +27,12 @@ export default async function CharacterLandingPage({
     redirect(`/auth/signin?callbackUrl=/characters/${slug}`);
   }
 
-  const portrait = c.assets.find((a) => a.kind === "portrait")?.blobUrl ?? null;
-  const hero = c.assets.find((a) => a.kind === "hero")?.blobUrl ?? portrait;
-  const code = c.slug.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 10);
+  const portraitAsset = c.assets.find((a) => a.kind === "portrait");
+  const heroAsset = c.assets.find((a) => a.kind === "hero") ?? portraitAsset;
+  const portrait =
+    portraitAsset?.animationUrl ?? portraitAsset?.blobUrl ?? null;
+  const hero = heroAsset?.animationUrl ?? heroAsset?.blobUrl ?? portrait;
+  const heroIsAnimated = !!(hero && /\/portraits\/ani\//.test(hero));
 
   return (
     <main className="flex-1 min-h-0 bg-surface relative overflow-y-auto">
@@ -46,12 +49,9 @@ export default async function CharacterLandingPage({
               <ArrowLeft size={20} strokeWidth={2} />
             </Link>
             <div>
-              <h1 className="font-headline font-black tracking-[0.2em] text-on-surface uppercase text-xs">
-                SCHOLAR_{code}
+              <h1 className="font-headline font-black tracking-[0.15em] text-on-surface uppercase text-sm truncate max-w-[60vw]">
+                {c.name}
               </h1>
-              <p className="label-mono text-primary text-[9px]">
-                / UNIT_PREVIEW
-              </p>
             </div>
           </div>
           <button
@@ -74,6 +74,7 @@ export default async function CharacterLandingPage({
             className="object-cover"
             priority
             sizes="100vw"
+            unoptimized={heroIsAnimated}
           />
         ) : (
           <div
@@ -86,16 +87,6 @@ export default async function CharacterLandingPage({
         )}
         <div className="absolute inset-0 diagonal-bg opacity-40" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-surface" />
-
-        {/* Tactical corner markers */}
-        <div className="absolute top-24 left-5 right-5 flex items-center justify-between z-10">
-          <span className="label-mono text-on-surface/70">
-            NODE_{code.slice(0, 3)}
-          </span>
-          <span className="label-mono text-on-surface/70">
-            REF_ARCHIVE.V1
-          </span>
-        </div>
       </div>
 
       {/* Card */}
@@ -103,27 +94,6 @@ export default async function CharacterLandingPage({
         <div className="bg-surface-container-lowest rounded-lg shadow-tinted-lg relative overflow-hidden">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
           <div className="p-7 pl-8">
-            <div className="flex flex-wrap items-center gap-2 mb-3">
-              <span
-                className="label-scholastic-xs px-2 py-0.5 bg-primary text-on-primary"
-                style={{ transform: "skewX(-12deg)" }}
-              >
-                <span
-                  style={{ transform: "skewX(12deg)", display: "inline-block" }}
-                >
-                  SCHOLAR_{code.slice(0, 4)}
-                </span>
-              </span>
-              <span className="label-scholastic-xs px-2 py-0.5 bg-secondary-container text-on-secondary-container">
-                INDEXED
-              </span>
-              <span
-                className="label-scholastic-xs px-2 py-0.5 bg-tertiary-container text-on-tertiary-container"
-                style={{ backgroundColor: c.accentColor + "40" }}
-              >
-                ACCENT:{c.accentColor.toUpperCase()}
-              </span>
-            </div>
             <h2 className="font-headline text-4xl font-bold text-on-surface leading-tight tracking-tight mb-3">
               {c.name}
             </h2>

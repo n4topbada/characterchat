@@ -12,9 +12,11 @@ type Props = {
 };
 
 /**
- * TopAppBar — Scholastic Archive signature header.
- *  - Archive logo + 버전 라벨.
+ * TopAppBar — 페이지 공통 상단 바.
+ *  - 좌측: 앱 로고 아이콘 + 페이지 타이틀(선택적으로 subtitle).
  *  - admin 계정이면 ADMIN 배지 + PC 에서 Dock 토글 버튼 노출.
+ *  (이전에 ARCHIVE_v1.0 버전 라벨이 항상 헤더 큰 글자로 노출되어
+ *   유저에게 불필요했던 내부 식별자 — 제거했다.)
  */
 export function TopAppBar({ title, subtitle, showSearch, right }: Props) {
   const { data: session } = useSession();
@@ -30,13 +32,13 @@ export function TopAppBar({ title, subtitle, showSearch, right }: Props) {
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="font-headline font-black tracking-[0.2em] text-on-surface uppercase text-sm truncate">
-                ARCHIVE_v1.0
+              <h1 className="font-headline font-black tracking-[0.15em] text-on-surface text-base sm:text-lg truncate">
+                {title}
               </h1>
               {isAdmin && (
                 <span
                   className="inline-flex items-center gap-1 rounded-sm bg-indigo-600 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-white"
-                  title="SENIOR_ARCHIVIST"
+                  title="관리자"
                 >
                   <ShieldCheck size={9} />
                   ADMIN
@@ -44,14 +46,10 @@ export function TopAppBar({ title, subtitle, showSearch, right }: Props) {
               )}
             </div>
             {subtitle ? (
-              <p className="label-mono text-primary text-[9px] truncate">
-                / {subtitle}
+              <p className="label-mono text-primary/80 text-[10px] truncate">
+                {subtitle}
               </p>
-            ) : (
-              <p className="label-mono text-primary text-[9px] truncate">
-                / {title}
-              </p>
-            )}
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-1">

@@ -18,7 +18,7 @@ async function loadCharacters(): Promise<CarouselCharacter[]> {
       name: r.name,
       tagline: r.tagline,
       accentColor: r.accentColor,
-      portraitUrl: r.assets[0]?.blobUrl ?? null,
+      portraitUrl: r.assets[0]?.animationUrl ?? r.assets[0]?.blobUrl ?? null,
       tags: [],
     }));
   } catch {

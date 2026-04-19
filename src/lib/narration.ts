@@ -75,13 +75,20 @@ export function sanitizeModelBody(input: string): string {
   return s.replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ");
 }
 
-// 모델 응답을 문단 단위로 쪼개, 각 문단이 나레이션인지 직접 발화인지 분류한다.
-// - 문단이 통째로 *...*(연속된 narration span) 만으로 이루어져 있으면 "narration"
-// - 그 외(일부라도 일반 텍스트가 섞인) 는 "dialogue"
-// 나레이션 문단의 value 는 별표를 떼고 이어붙인 순수 문장으로 돌려준다.
+// 모델 응답을 문단 단위로 쪼개, 세 가지 종류로 분류한다.
+//   - "narration"  : 문단이 통째로 *...*(asterisk narration) 로 이루어진 행동 묘사
+//   - "dialogue"   : 따옴표로 감싼 직접 발화가 포함된 문단 (말풍선 렌더링)
+//   - "omniscient" : 따옴표도 별표도 없는 평문 — 전지적 작가 시점 서술
+//
+// 따옴표 판정: "...", '...', 「...」, ‘...’, “...” (전각 한국어/일본어 스타일 포함).
+// action narration (*...*) 이 섞여 있고 따옴표도 있으면 "dialogue" 우선.
+// 따옴표 없이 *...* 섞여 있으면 "narration" (기존 규칙 유지).
 export type DialogueBlock =
   | { kind: "narration"; value: string }
-  | { kind: "dialogue"; value: string };
+  | { kind: "dialogue"; value: string }
+  | { kind: "omniscient"; value: string };
+
+const QUOTE_RE = /["“”„『』「」《》'‘’]/;
 
 export function splitDialogueBlocks(input: string): DialogueBlock[] {
   const paragraphs = input
@@ -93,12 +100,25 @@ export function splitDialogueBlocks(input: string): DialogueBlock[] {
     const segs = splitNarration(p).filter((s) => s.value.trim().length > 0);
     const allNarration =
       segs.length > 0 && segs.every((s) => s.kind === "narration");
+    const hasQuote = QUOTE_RE.test(p);
+
+    if (hasQuote) {
+      // 따옴표 있는 문단은 항상 대사 취급. 내부의 *행동* 은 bubble 안에서 이탤릭으로.
+      return { kind: "dialogue", value: p };
+    }
     if (allNarration) {
+      // 전부 *...* 만으로 구성된 행동 묘사
       return {
         kind: "narration",
         value: segs.map((s) => s.value).join(" ").trim(),
       };
     }
-    return { kind: "dialogue", value: p };
+    const hasAnyNarration = segs.some((s) => s.kind === "narration");
+    if (hasAnyNarration) {
+      // *...* 가 일부 섞여 있으나 따옴표는 없음 — 혼합 서술로 보고 narration 취급.
+      return { kind: "narration", value: p };
+    }
+    // 따옴표도 *별표* 도 없는 평문 — 전지적 작가 시점 서술.
+    return { kind: "omniscient", value: p };
   });
 }

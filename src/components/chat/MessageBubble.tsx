@@ -27,7 +27,7 @@ export function MessageBubble({
   senderLabel?: string;
 }) {
   const isUser = msg.role === "user";
-  const tagText = isUser ? "OPERATOR" : (senderLabel ?? "SCHOLAR");
+  const tagText = isUser ? "나" : (senderLabel ?? "");
 
   if (isUser) {
     return (
@@ -87,15 +87,31 @@ export function MessageBubble({
         </div>
       ) : null}
       <div className="flex flex-col gap-2 w-full">
-        {splitDialogueBlocks(body).map((block, i) =>
-          block.kind === "narration" ? (
-            <p
-              key={i}
-              className="narration text-sm leading-relaxed whitespace-pre-wrap break-words px-2"
-            >
-              {block.value}
-            </p>
-          ) : (
+        {splitDialogueBlocks(body).map((block, i) => {
+          if (block.kind === "narration") {
+            // *행동* — 이탤릭 회색, 버블 없음
+            return (
+              <p
+                key={i}
+                className="narration text-sm leading-relaxed whitespace-pre-wrap break-words px-2"
+              >
+                {block.value}
+              </p>
+            );
+          }
+          if (block.kind === "omniscient") {
+            // 전지적 작가 시점 — 버블 없이 평문, 본문 색상은 유지하되 약간 톤다운.
+            return (
+              <p
+                key={i}
+                className="text-sm leading-relaxed whitespace-pre-wrap break-words px-2 text-on-surface-variant"
+              >
+                {block.value}
+              </p>
+            );
+          }
+          // dialogue — 말풍선
+          return (
             <div
               key={i}
               className="relative bubble-receive bg-surface-container-high px-5 py-3 shadow-tinted-sm border-l-2 border-primary"
@@ -104,8 +120,8 @@ export function MessageBubble({
                 <NarrationText value={block.value} />
               </p>
             </div>
-          )
-        )}
+          );
+        })}
       </div>
     </div>
   );

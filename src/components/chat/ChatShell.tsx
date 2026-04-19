@@ -154,10 +154,10 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
     [sessionId]
   );
 
-  const senderCode = character.name
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 8)
-    .toUpperCase() || "SCHOLAR";
+  // 캐릭터 한글 이름을 그대로 발화자 라벨로. 영문일 때도 uppercase 변환을 하지 않아
+  // 원래 이름을 있는 그대로 보이게 한다. 과거엔 non-ascii 를 다 지우고 "SCHOLAR" 로
+  // fallback 시켰는데, 한글 이름이 지워져 뜬금없는 기술 코드네임이 유저에게 노출됐다.
+  const senderCode = character.name.trim().slice(0, 16) || "BOT";
 
   const latestStatus = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -194,6 +194,7 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
                   width={36}
                   height={36}
                   className="w-full h-full object-cover"
+                  unoptimized={/\/portraits\/ani\//.test(character.portraitUrl)}
                 />
               ) : (
                 <div
@@ -237,13 +238,24 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
 
       {/* Chat log — internal scroll */}
       <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-5 flex flex-col gap-8 relative z-10">
-        {messages.map((m) => (
-          <MessageBubble key={m.id} msg={m} senderLabel={senderCode} />
-        ))}
+        {messages.map((m) =>
+          // 스트리밍 중 비어 있는 model placeholder 는 TypingIndicator 가 대체 렌더.
+          // 이걸 그리면 빈 헤더가 하나 보이고 아래 TypingIndicator 가 또 붙어서
+          // 메시지가 2개처럼 보이는 문제가 생긴다.
+          m.role === "model" && m.content.trim().length === 0 ? null : (
+            <MessageBubble
+              key={m.id}
+              msg={m}
+              senderLabel={character.name || senderCode}
+            />
+          )
+        )}
 
         {streaming &&
           messages[messages.length - 1]?.role === "model" &&
-          !messages[messages.length - 1]?.content && <TypingIndicator />}
+          !messages[messages.length - 1]?.content && (
+            <TypingIndicator senderLabel={character.name || senderCode} />
+          )}
 
         <div ref={bottomRef} />
       </main>
