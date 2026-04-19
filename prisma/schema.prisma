@@ -256,6 +256,9 @@ model Asset {
   nsfwLevel    Int       @default(0) // 0 safe / 1 suggestive / 2 partial / 3 explicit
   description  String?   @db.Text // 50자 이내 한글 설명 (디버깅/관리자 표시용)
   triggerTags  String[]  // 자유 태그 — 특정 이벤트/키워드와 매칭 ("rain", "cooking")
+  // Veo 3.1 Lite 로 생성한 portrait 애니메이션 (animated webp, 540x810 Q75 12fps).
+  // null 이면 정지 이미지(blobUrl)로 대체 렌더.
+  animationUrl String?
   createdAt    DateTime  @default(now())
   character    Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
   messages     Message[] @relation("MessageImageAsset")

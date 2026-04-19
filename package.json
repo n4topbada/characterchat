@@ -17,6 +17,7 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "portraits:generate": "tsx scripts/generate-portraits.ts",
+    "portraits:animate": "tsx scripts/generate-portrait-animation.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
