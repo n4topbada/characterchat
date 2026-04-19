@@ -7,6 +7,7 @@ import { MessageBubble, type ChatMessage } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { Composer } from "./Composer";
 import { StatusPanel } from "./StatusPanel";
+import { RoomBackdrop } from "./RoomBackdrop";
 import { extractStatus } from "@/lib/narration";
 
 const IMG_TAG_RE_CLIENT = /<img\s+[^>]*tags\s*=\s*"[^"]+"[^>]*\/?>/gi;
@@ -22,11 +23,20 @@ type Props = {
     tagline: string;
   };
   initialMessages: ChatMessage[];
+  initialBackgroundUrl?: string | null;
 };
 
-export function ChatShell({ sessionId, character, initialMessages }: Props) {
+export function ChatShell({
+  sessionId,
+  character,
+  initialMessages,
+  initialBackgroundUrl = null,
+}: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [streaming, setStreaming] = useState(false);
+  const [backgroundUrl, setBackgroundUrl] = useState<string | null>(
+    initialBackgroundUrl,
+  );
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -119,6 +129,15 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
               } catch {
                 // ignore
               }
+            } else if (event === "background_picked") {
+              // 서버가 현재 status(location+mood) 기준으로 고른 배경 URL.
+              // RoomBackdrop 이 자체적으로 중복 URL 을 걸러내므로 setter 만 호출.
+              try {
+                const { url } = JSON.parse(data) as { url: string };
+                if (url) setBackgroundUrl(url);
+              } catch {
+                // ignore
+              }
             } else if (event === "done") {
               // stream complete — clean any lingering <img tags/> tokens in the
               // accumulated buffer (서버 저장본은 이미 stripped, 클라 중간 버퍼는 남을 수 있음).
@@ -171,6 +190,8 @@ export function ChatShell({ sessionId, character, initialMessages }: Props) {
 
   return (
     <div className="flex-1 min-h-0 bg-surface flex flex-col relative overflow-hidden">
+      {/* Mood-matched backdrop (아래→위 DOM 순서로 가장 먼저, diagonal/dot 패턴 뒤) */}
+      <RoomBackdrop url={backgroundUrl} />
       {/* Background patterns — scoped to chat frame */}
       <div className="absolute inset-0 pointer-events-none diagonal-bg opacity-60 z-0" />
       <div className="absolute inset-0 pointer-events-none dot-pattern opacity-30 z-0" />

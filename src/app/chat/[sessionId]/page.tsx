@@ -2,6 +2,15 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { ChatShell } from "@/components/chat/ChatShell";
+import {
+  pickBestBackground,
+  type PickableBackground,
+} from "@/lib/assets/pickBackground";
+import {
+  statusToTokens,
+  spotBodyTokens,
+} from "@/lib/assets/pickAsset";
+import { extractStatus } from "@/lib/narration";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +51,60 @@ export default async function ChatPage({
 
   if (!s || s.userId !== session.user.id) notFound();
 
+  // 초기 RoomBackdrop URL 계산: (1) PersonaState.statusPayload 우선,
+  // (2) 없으면 최신 model 메시지의 <status> 블록에서 추출. location+mood 토큰으로
+  // pickBestBackground 스코어링. 매칭 없으면 null (기존 diagonal/dot 패턴만 보임).
+  let initialBackgroundUrl: string | null = null;
+  const backgroundRows = await prisma.asset.findMany({
+    where: { characterId: s.characterId, kind: "background" },
+    select: {
+      id: true,
+      blobUrl: true,
+      width: true,
+      height: true,
+      moodFit: true,
+      locationFit: true,
+      triggerTags: true,
+      description: true,
+    },
+  });
+  if (backgroundRows.length) {
+    const personaState = await prisma.personaState.findUnique({
+      where: {
+        userId_characterId: {
+          userId: session.user.id,
+          characterId: s.characterId,
+        },
+      },
+      select: { statusPayload: true },
+    });
+    let status: unknown = personaState?.statusPayload ?? null;
+    let body = "";
+    if (!status) {
+      for (const m of [...s.messages]) {
+        if (m.role !== "model") continue;
+        const parsed = extractStatus(m.content);
+        if (parsed.status) {
+          status = parsed.status;
+          body = parsed.body;
+          break;
+        }
+      }
+    }
+    if (status && typeof status === "object") {
+      const tokens = [
+        ...statusToTokens(status),
+        ...(body ? spotBodyTokens(body) : []),
+      ];
+      const bg = pickBestBackground(
+        backgroundRows as PickableBackground[],
+        tokens,
+        { seed: s.id },
+      );
+      initialBackgroundUrl = bg?.blobUrl ?? null;
+    }
+  }
+
   return (
     <ChatShell
       sessionId={s.id}
@@ -66,6 +129,7 @@ export default async function ChatPage({
             }
           : null,
       }))}
+      initialBackgroundUrl={initialBackgroundUrl}
     />
   );
 }

@@ -14,6 +14,10 @@ import {
   stripImageTags,
   type PickableAsset,
 } from "@/lib/assets/pickAsset";
+import {
+  pickBestBackground,
+  type PickableBackground,
+} from "@/lib/assets/pickBackground";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -148,6 +152,22 @@ export async function POST(
       description: true,
       triggerTags: true,
       kind: true,
+    },
+  });
+
+  // 4c. background 에셋 목록 (RoomBackdrop 레이어 소스). kind="background" 전용.
+  //     인물 없는 환경 컷 — location/mood 로만 스코어링.
+  const backgroundAssets: PickableBackground[] = await prisma.asset.findMany({
+    where: { characterId: session.characterId, kind: "background" },
+    select: {
+      id: true,
+      blobUrl: true,
+      width: true,
+      height: true,
+      moodFit: true,
+      locationFit: true,
+      triggerTags: true,
+      description: true,
     },
   });
 
@@ -290,7 +310,8 @@ export async function POST(
       // status 의 outfit/location/mood + 본문 한국어 키워드를 합쳐 Asset 토큰화.
       // body 스포팅은 장면 다양성 보정 — 같은 status 값 반복 시 본문에서 힌트를 추가로 끌어온다.
       let pickedAsset: PickableAsset | null = null;
-      if (galleryAssets.length && status && typeof status === "object") {
+      let pickedBackground: PickableBackground | null = null;
+      if (status && typeof status === "object") {
         const statusTokens = statusToTokens(status);
         const bodyTokens = spotBodyTokens(body);
         const tokens = [...statusTokens, ...bodyTokens];
@@ -299,16 +320,25 @@ export async function POST(
           const horny = typeof s.horny === "number" ? (s.horny as number) : null;
           const affection =
             typeof s.affection === "number" ? (s.affection as number) : null;
-          pickedAsset = pickBestAsset(
-            galleryAssets,
-            tokens,
-            {
-              nsfwEnabled: session.character.nsfwEnabled,
-              horny,
-              affection,
-            },
-            { messageId },
-          );
+          if (galleryAssets.length) {
+            pickedAsset = pickBestAsset(
+              galleryAssets,
+              tokens,
+              {
+                nsfwEnabled: session.character.nsfwEnabled,
+                horny,
+                affection,
+              },
+              { messageId },
+            );
+          }
+          if (backgroundAssets.length) {
+            // 배경은 세션 단위로 고정되는 느낌이 자연스러움 — tie-break seed 를 sessionId
+            // 로 잡아 같은 장소 토큰이면 같은 사진을 고수하다가, 장소가 바뀔 때만 전환.
+            pickedBackground = pickBestBackground(backgroundAssets, tokens, {
+              seed: id,
+            });
+          }
         }
       }
 
@@ -335,6 +365,16 @@ export async function POST(
           url: pickedAsset.blobUrl,
           width: pickedAsset.width,
           height: pickedAsset.height,
+        });
+      }
+
+      if (pickedBackground) {
+        // RoomBackdrop 레이어가 크로스페이드할 수 있게 별도 이벤트로 보낸다.
+        // 클라 쪽에서는 마지막 값만 유지하면 됨(같은 URL 이 반복되면 crossfade 생략).
+        send("background_picked", {
+          url: pickedBackground.blobUrl,
+          width: pickedBackground.width,
+          height: pickedBackground.height,
         });
       }
 

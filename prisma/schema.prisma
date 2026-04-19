@@ -23,6 +23,7 @@ enum AssetKind {
   portrait
   hero
   gallery
+  background
 }
 
 enum KnowledgeSource {
