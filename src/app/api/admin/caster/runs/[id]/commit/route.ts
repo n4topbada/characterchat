@@ -29,6 +29,20 @@ const PersonaSchema = z.object({
   appearanceKeys: z.array(z.string()).default([]),
 });
 
+/** 관리자가 레퍼런스 이미지를 확정했을 때 따라오는 임시 대표 이미지 참조.
+ * 현 단계에선 appearanceKeys 맨 앞에 "image: <URL>" 형태로 들어가 외형 앵커
+ * 역할을 한다. 정식 Asset 업로드 파이프가 붙으면 URL 을 fetch 해 Blob 으로
+ * 승격하도록 확장 예정. */
+const ReferenceImageSchema = z
+  .object({
+    url: z.string().url(),
+    sourceUri: z.string().url().nullable().optional(),
+    title: z.string().nullable().optional(),
+    domain: z.string().nullable().optional(),
+  })
+  .nullable()
+  .optional();
+
 const BodySchema = z.object({
   slug: z
     .string()
@@ -43,6 +57,7 @@ const BodySchema = z.object({
     .default("#3a5f94"),
   persona: PersonaSchema,
   greeting: z.string().min(1).max(2000),
+  referenceImage: ReferenceImageSchema,
 });
 
 export async function POST(
@@ -107,6 +122,16 @@ export async function POST(
       },
     });
 
+    // 레퍼런스 이미지 URL 은 appearanceKeys 맨 앞에 "ref image: <URL>" 로 프리펜드해
+    // 외형 정보에 시각 앵커로 남긴다. 이미 동일 토큰이 있으면 중복 삽입 안 함.
+    let appearanceKeys = body.persona.appearanceKeys;
+    if (body.referenceImage?.url) {
+      const token = `ref image: ${body.referenceImage.url}`;
+      if (!appearanceKeys.includes(token)) {
+        appearanceKeys = [token, ...appearanceKeys];
+      }
+    }
+
     await tx.personaCore.create({
       data: {
         id: personaId,
@@ -129,7 +154,7 @@ export async function POST(
         speechRhythm: body.persona.speechRhythm ?? null,
         speechQuirks: body.persona.speechQuirks,
         languageNotes: body.persona.languageNotes ?? null,
-        appearanceKeys: body.persona.appearanceKeys,
+        appearanceKeys,
       },
     });
 

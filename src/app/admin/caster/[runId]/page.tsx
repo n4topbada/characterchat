@@ -54,8 +54,16 @@ export default async function CasterRunPage({
   });
 
   return (
-    <main className="flex h-dvh flex-col overflow-hidden bg-surface">
-      <TopAppBar title="Caster" subtitle={`run · ${run.status}`} />
+    // fixed inset-0 로 visualViewport 에 고정 — 모바일 가상 키보드가 올라올 때
+    // 바디 scroll 이 뜨지 않고 헤더/본문/입력창 비율만 줄어들어 헤더가 상단에
+    // 그대로 유지된다. (h-dvh + overflow-hidden 은 키보드 오픈 시 iOS 크롬에서
+    // 바디 scroll 이 생겨 헤더가 밀려올라가는 현상이 있었다.)
+    <main className="fixed inset-0 flex flex-col overflow-hidden bg-surface">
+      <TopAppBar
+        title="Caster"
+        subtitle={`run · ${run.status}`}
+        backHref="/admin/caster"
+      />
       <CasterConsole
         runId={run.id}
         initialStatus={run.status}

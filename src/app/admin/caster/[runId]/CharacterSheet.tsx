@@ -30,6 +30,13 @@ type PersonaPartial = {
   appearanceKeys?: string[];
 };
 
+export type SheetReferenceImage = {
+  url: string;
+  sourceUri?: string | null;
+  title?: string | null;
+  domain?: string | null;
+};
+
 export type SheetDraft = {
   slug?: string | null;
   name?: string | null;
@@ -37,6 +44,8 @@ export type SheetDraft = {
   accentColor?: string | null;
   greeting?: string | null;
   persona?: PersonaPartial;
+  /** 관리자가 썸네일에서 "이 느낌" 으로 확정한 레퍼런스 이미지. 임시 대표 이미지로 사용. */
+  referenceImage?: SheetReferenceImage | null;
 };
 
 type Props = {
@@ -313,6 +322,38 @@ export function CharacterSheet({ draft, updatedKeys, completionPct }: Props) {
       </Section>
 
       <Section title="외형">
+        {d.referenceImage?.url ? (
+          <div className="flex items-start gap-3 rounded-md border border-primary/30 bg-primary/5 p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={d.referenceImage.url}
+              alt=""
+              referrerPolicy="no-referrer"
+              className="h-24 w-24 shrink-0 rounded-md object-cover ring-1 ring-primary/40"
+            />
+            <div className="min-w-0 flex-1 text-xs leading-relaxed">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-primary">
+                레퍼런스 이미지 (임시 대표)
+              </p>
+              {d.referenceImage.title ? (
+                <p className="mt-0.5 truncate font-semibold text-on-surface">
+                  {d.referenceImage.title}
+                </p>
+              ) : null}
+              {d.referenceImage.sourceUri ? (
+                <a
+                  href={d.referenceImage.sourceUri}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="mt-0.5 block truncate text-on-surface-variant hover:text-primary"
+                  title={d.referenceImage.sourceUri}
+                >
+                  {d.referenceImage.domain ?? d.referenceImage.sourceUri}
+                </a>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <Row
           label={KEY_LABELS["persona.appearanceKeys"]}
           keyPath="persona.appearanceKeys"

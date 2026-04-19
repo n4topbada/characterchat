@@ -354,3 +354,32 @@ h3.font-headline {
 .animate-pulse-dot {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Touch feedback — 호버가 없는 터치 디바이스에서                              */
+/*  모든 버튼/링크/role=button 에 눌림 시각 피드백을 준다.                      */
+/*  개별 컴포넌트에 active: 유틸을 일일이 붙이지 않아도 일관 UX.                */
+/* -------------------------------------------------------------------------- */
+@media (hover: none) {
+  button:not(:disabled):active,
+  a:active,
+  [role="button"]:active,
+  [type="button"]:not(:disabled):active,
+  [type="submit"]:not(:disabled):active {
+    filter: brightness(0.82);
+    transform: scale(0.97);
+    transition: transform 60ms ease-out, filter 60ms ease-out;
+  }
+}
+
+/* 데스크탑 포인터 디바이스에도 미세한 눌림 피드백 — hover 가 있지만 클릭 순간의
+ * 반응성이 없으면 "버튼이 반응했나?" 가 헷갈린다. 아주 짧게만. */
+@media (hover: hover) {
+  button:not(:disabled):active,
+  [role="button"]:active,
+  [type="button"]:not(:disabled):active,
+  [type="submit"]:not(:disabled):active {
+    filter: brightness(0.9);
+    transition: filter 50ms ease-out;
+  }
+}

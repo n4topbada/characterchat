@@ -442,6 +442,14 @@ export function CasterConsole({
         languageNotes: p.languageNotes ?? null,
         appearanceKeys: p.appearanceKeys ?? [],
       },
+      referenceImage: draft.referenceImage
+        ? {
+            url: draft.referenceImage.url,
+            sourceUri: draft.referenceImage.sourceUri ?? null,
+            title: draft.referenceImage.title ?? null,
+            domain: draft.referenceImage.domain ?? null,
+          }
+        : null,
     };
   }, [draft]);
 

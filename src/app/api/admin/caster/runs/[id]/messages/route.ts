@@ -311,9 +311,27 @@ export async function POST(
       send("choices", { choices });
     }
 
-    // 드래프트 갱신
-    if (patch) {
-      const nextDraft = mergePatch(currentDraft, patch);
+    // 드래프트 갱신.
+    // imageRef 가 이번 턴에 붙어 있었다면 서버가 referenceImage 를 직접 주입한다
+    // (모델이 <patch> 에 빠뜨려도 UI 에 프리뷰가 남도록).
+    const imagePatch: typeof patch = parsed.data.imageRef
+      ? {
+          referenceImage: {
+            url: parsed.data.imageRef.image,
+            sourceUri: parsed.data.imageRef.uri,
+            title: parsed.data.imageRef.title ?? null,
+            domain: parsed.data.imageRef.domain ?? null,
+          },
+        }
+      : null;
+
+    const effectivePatch =
+      patch && imagePatch
+        ? { ...patch, referenceImage: imagePatch.referenceImage }
+        : (patch ?? imagePatch);
+
+    if (effectivePatch) {
+      const nextDraft = mergePatch(currentDraft, effectivePatch);
       await prisma.casterRun.update({
         where: { id: run.id },
         data: {
@@ -321,7 +339,7 @@ export async function POST(
           status: "draft_ready",
         },
       });
-      send("patch", { patch, draft: nextDraft });
+      send("patch", { patch: effectivePatch, draft: nextDraft });
     }
 
     send("done", { ok: true });
