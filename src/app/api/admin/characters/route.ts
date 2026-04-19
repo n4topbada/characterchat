@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin, errorJson } from "@/lib/api-utils";
+import { MODELS } from "@/lib/gemini/client";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +65,9 @@ export async function POST(req: Request) {
       config: {
         create: {
           id: ulid(),
-          model: "gemini-2.5-flash-lite",
+          // 채팅 모델은 MODELS.chat (gemini-3.0-flash) 로 고정.
+          // docs/07-llm-config.md §0 참고.
+          model: MODELS.chat,
           temperature: 0.8,
           maxOutputTokens: 1024,
           greeting: "…",

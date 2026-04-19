@@ -9,7 +9,10 @@ import { ulid } from "ulid";
 
 // MODELS.chat 와 동일 값. ESM import 경로 순환을 피하기 위해 하드코딩.
 // src/lib/gemini/client.ts 와 동기화되어야 한다.
-const CHAT_MODEL = "gemini-2.5-flash-lite";
+//
+// ⚠️ 채팅 모델은 gemini-3.0-flash 로 고정. 하위 버전(2.x/1.x) 금지.
+// 정책 전문: docs/07-llm-config.md §0 "모델 고정 정책".
+const CHAT_MODEL = "gemini-3.0-flash";
 
 const prisma = new PrismaClient();
 

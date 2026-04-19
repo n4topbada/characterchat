@@ -21,9 +21,11 @@
 ## LLM / AI
 | 용도 | 모델 | SDK |
 |---|---|---|
-| Chat (기본) | `gemini-2.5-flash-lite` 또는 `gemini-3.1-flash-lite-preview` | `@google/genai` ^1.50 |
+| Chat (기본) | `gemini-3.0-flash` **고정** (하위 버전 금지 — 07-llm-config §0) | `@google/genai` ^1.50 |
 | Image (Caster 포트레이트) | `gemini-3.1-flash-image-preview` | 동일 |
 | Embedding | `text-embedding-004` (768d) | 동일 |
+
+> 채팅 모델은 [07-llm-config.md §0](07-llm-config.md#0-모델-고정-정책-️-do-not-touch) 의 **모델 고정 정책** 을 따른다. `gemini-2.x` / `gemini-1.x` 로는 절대 내려가지 않으며, 상향(3.1+/4.x) 만 허용된다.
 
 `next.config.ts` 의 `serverExternalPackages: ['@google/genai','sharp']` 필수.
 

@@ -1,5 +1,30 @@
 # 07 · LLM Config
 
+## 0. 모델 고정 정책 ⚠️ DO NOT TOUCH
+
+**채팅 모델은 `gemini-3.0-flash` 로 고정.** 아래 세 가지를 동시에 반드시 따른다.
+
+1. **하위 버전 금지.** `gemini-2.x-*`, `gemini-1.x-*` 같은 하위 버전으로는 **절대 내려가지 않는다.** 비용/지연이 아무리 매력적으로 보여도 불가. 캐릭터 발화 자연스러움·한국어 뉘앙스·장문 기억 유지 차이가 체감으로 크기 때문이다.
+2. **상향은 OK.** 추후 `gemini-3.1-flash`·`gemini-4.x` 등 **3.0 이상**의 신규 모델이 나오면 승격 가능. 승격은 언제나 `MODELS.chat` (`src/lib/gemini/client.ts`) 한 곳만 바꾸는 방식으로 한다.
+3. **런타임 가드.** DB 에 남은 하위 모델 문자열(이전 시드 실수 등)은 `src/lib/gemini/chat.ts` 의 `normalizeModel()` 이 감지해 `MODELS.chat` 으로 **강제 상향**한다. 개별 `CharacterConfig.model` 을 낮추더라도 실제 호출은 3.0-flash 로 끌어올려진다.
+
+### 동기화되어야 하는 지점
+| 파일 | 위치 | 값 |
+|---|---|---|
+| `src/lib/gemini/client.ts` | `MODELS.chat` | `"gemini-3.0-flash"` |
+| `prisma/seed.ts` | `CHAT_MODEL` | `"gemini-3.0-flash"` |
+| `src/lib/gemini/chat.ts` | `normalizeModel()` 의 업그레이드 경로 | `gemini-[12]\.` 매치 시 → `MODELS.chat` |
+| 본 문서 §1 표의 `model` 기본값 | | `gemini-3.0-flash` |
+
+### 금지 사례
+- ❌ `gemini-2.5-flash-lite` / `gemini-2.5-flash-preview` / `gemini-1.5-pro` 등
+- ❌ "일단 2.5 로 테스트하고 나중에 올리자" — 테스트도 3.0 으로
+- ❌ 개별 캐릭터에 하위 모델을 꽂아 "이 한 명만 싸게 돌리자" 같은 최적화
+
+이 정책을 우회해야 할 예외가 생기면 코드가 아니라 **이 섹션을 먼저 업데이트**한 뒤 PR 에 사유를 남긴다.
+
+---
+
 `CharacterConfig` 테이블은 **생성 파라미터만** 담는다. 페르소나 서술은 분리된 세 저장소에서 합성된다:
 
 - **`PersonaCore`** — 캐릭터의 불변 사실(정체성·신념·말투·한계·외형 키·감수성)
@@ -113,5 +138,5 @@ export const DEFAULT_SAFETY = [
 ## 6. 주의
 - `maxOutputTokens` 가 너무 작으면 상태창이 잘린다. 권장 ≥ 512 (상태창 ON 이면 ≥ 768).
 - `safetySettings` 를 낮추면 유해 응답 가능성 증가. 감사(audit) 기능은 M5.
-- 모델 ID 는 Gemini API 가 주기적으로 deprecate 된다. 관리자가 `/admin/settings` 에서 갱신하도록.
+- 모델 ID 는 **§0 모델 고정 정책** 을 따른다. 하위 버전(2.x/1.x) 로 절대 내리지 말 것. 상향(3.1+/4.x)만 허용되며, 상향 시에도 `MODELS.chat` 한 곳을 바꾼 뒤 §0 표를 업데이트한다. 개별 `CharacterConfig.model` 을 하위로 바꿔도 런타임 `normalizeModel()` 이 3.0-flash 로 강제 상향한다.
 - 페르소나를 갱신하려면 `PersonaCore` 를 편집(admin UI)하거나 **Caster 재-commit** — 더이상 systemPrompt 를 건드리지 않는다.

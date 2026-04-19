@@ -114,8 +114,20 @@ function describeErr(e: unknown): string {
   return String(anyE?.message ?? e).slice(0, 160);
 }
 
+/**
+ * 프로젝트 전역 모델 ID.
+ *
+ * ⚠️ 채팅 모델(chat)은 **gemini-3.0-flash 로 고정**한다.
+ *   - gemini-2.x / 1.x 같은 하위 버전으로 절대 내려가지 않는다.
+ *   - 품질이 가장 중요한 축이고, 캐릭터 발화의 자연스러움 차이가 크다.
+ *   - 향후 상향(= 3.1+ / 4.x) 은 OK. 하위로만 금지.
+ *   - 자세한 정책은 docs/07-llm-config.md §0 "모델 고정 정책" 참고.
+ *
+ * normalizeModel() (src/lib/gemini/chat.ts) 이 DB 에 남은 레거시 하위 모델
+ * 문자열을 감지해 런타임에 MODELS.chat 으로 끌어올린다.
+ */
 export const MODELS = {
-  chat: "gemini-2.5-flash-lite",
+  chat: "gemini-3.0-flash",
   image: "gemini-3.1-flash-image-preview",
   embed: "text-embedding-004",
 } as const;

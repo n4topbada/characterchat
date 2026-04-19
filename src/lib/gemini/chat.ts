@@ -9,24 +9,35 @@ import {
 } from "./prompt";
 
 /**
- * DB 에 저장된 model 문자열이 실존하지 않는 경우(예: 이전 시드의
- * "gemini-3.0-flash") 업스트림이 NOT_FOUND 로 응답 에러를 내 채팅이 전혀 안
- * 된다. 문제를 자동 복구하기 위해 알려진 안전 prefix 에 속하지 않으면
- * MODELS.chat 으로 치환한다.
+ * 모델 이름 정규화 — **하위 버전 금지** 가 핵심.
  *
- * - 허용 prefix: "gemini-2.5-", "gemini-2.0-", "gemini-1.5-",
- *   "gemini-3.1-flash-lite", "gemini-3.1-flash"
- *   (실험/프리뷰 preview 모델 포함)
+ * 정책 (docs/07-llm-config.md §0):
+ *   - 채팅은 gemini-3.0-flash 로 고정.
+ *   - 2.x / 1.x 같은 하위 버전 문자열이 DB 에 남아 있으면 런타임에 MODELS.chat
+ *     으로 강제 상향. 절대 하위로 내려가는 건 허용 안 한다.
+ *   - 상향(= 3.x 이상 또는 그 이상의 실험 프리뷰) 은 그대로 통과.
+ *   - 비어 있거나 해석 불가면 MODELS.chat 으로 fallback.
+ *
+ * 이 가드가 있는 이유: 이전 시드가 실수로 하위 모델 ID 를 박아 둔 적이 있고,
+ * 그게 DB 에 남아 개별 캐릭터만 응답 품질이 떨어지는 사고가 반복되기 때문.
  */
 function normalizeModel(name: string | null | undefined): string {
   if (!name) return MODELS.chat;
   const trimmed = name.trim();
-  const ok =
-    /^gemini-2\.5-/.test(trimmed) ||
-    /^gemini-2\.0-/.test(trimmed) ||
-    /^gemini-1\.5-/.test(trimmed) ||
-    /^gemini-3\.1-flash(-lite)?/.test(trimmed);
-  if (ok) return trimmed;
+
+  // 하위 버전 (1.x / 2.x) 은 무조건 업그레이드.
+  if (/^gemini-[12]\./i.test(trimmed)) {
+    console.warn(
+      `[chat] legacy model "${trimmed}" detected — upgrading to ${MODELS.chat} (lower versions are forbidden)`,
+    );
+    return MODELS.chat;
+  }
+
+  // 3.x 이상은 그대로 사용 (image-preview 등 이미지 전용은 여기로 오지 않으므로
+  // 안전하게 통과시킨다).
+  if (/^gemini-([3-9]|[1-9]\d+)\./i.test(trimmed)) return trimmed;
+
+  // 알 수 없는 포맷은 안전하게 fallback.
   console.warn(
     `[chat] unknown model "${trimmed}" — falling back to ${MODELS.chat}`,
   );
