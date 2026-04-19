@@ -7,6 +7,10 @@
 import { PrismaClient } from "@prisma/client";
 import { ulid } from "ulid";
 
+// MODELS.chat 와 동일 값. ESM import 경로 순환을 피하기 위해 하드코딩.
+// src/lib/gemini/client.ts 와 동기화되어야 한다.
+const CHAT_MODEL = "gemini-2.5-flash-lite";
+
 const prisma = new PrismaClient();
 
 type Sample = {
@@ -148,9 +152,25 @@ async function main() {
   ];
 
   for (const s of samples) {
-    const existing = await prisma.character.findUnique({ where: { slug: s.slug } });
+    const existing = await prisma.character.findUnique({
+      where: { slug: s.slug },
+      include: { config: true },
+    });
     if (existing) {
-      console.log(`[seed] Character '${s.slug}' exists — skip`);
+      // 이미 있는 캐릭터는 model 만 최신 값으로 덮어쓴다.
+      // (이전 시드가 존재하지 않는 모델명 'gemini-3.0-flash' 를 넣어 response 에러
+      // 를 일으키던 문제를 자동 복구.)
+      if (existing.config && existing.config.model !== CHAT_MODEL) {
+        await prisma.characterConfig.update({
+          where: { characterId: existing.id },
+          data: { model: CHAT_MODEL },
+        });
+        console.log(
+          `[seed] Character '${s.slug}' config.model ${existing.config.model} → ${CHAT_MODEL}`,
+        );
+      } else {
+        console.log(`[seed] Character '${s.slug}' exists — skip`);
+      }
       continue;
     }
 
@@ -167,7 +187,7 @@ async function main() {
           config: {
             create: {
               id: ulid(),
-              model: "gemini-3.0-flash",
+              model: CHAT_MODEL,
               temperature: 0.8,
               maxOutputTokens: 1024,
               greeting: s.greeting,

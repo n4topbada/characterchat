@@ -10,7 +10,34 @@ export type CarouselCharacter = {
   accentColor: string;
   portraitUrl: string | null;
   tags?: string[];
+  /** PersonaCore.role — 한 줄 직업/포지션 */
+  role?: string | null;
+  /** PersonaCore.ageText */
+  ageText?: string | null;
+  /** PersonaCore.species — 인간/이종족 등 */
+  species?: string | null;
+  /** PersonaCore.worldContext — 세계 배경 한 줄 */
+  worldContext?: string | null;
+  /** PersonaCore.backstorySummary — 원문. 카드에선 짧게 자른다 */
+  backstorySummary?: string | null;
 };
+
+function composeMeta(c: CarouselCharacter): string | null {
+  const parts = [c.role, c.ageText, c.species].filter(
+    (v): v is string => typeof v === "string" && v.trim().length > 0,
+  );
+  if (parts.length === 0) return null;
+  return parts.join(" · ");
+}
+
+function firstSentence(text: string, max = 120): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  // 문장 경계(. / 。 / ! / ?) 우선, 없으면 max 에서 자르고 …
+  const m = clean.slice(0, max).match(/^(.+?[.!?。])/);
+  if (m) return m[1];
+  return clean.slice(0, max - 1) + "…";
+}
 
 const FALLBACK_BG =
   "linear-gradient(135deg, #3a5f94 0%, #a7c8ff 45%, #cee9d9 100%)";
@@ -61,7 +88,7 @@ export function CharacterCard({ c }: { c: CarouselCharacter; index: number }) {
 
           <div className="p-6 pl-7">
             {/* Name */}
-            <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="flex items-start justify-between gap-3 mb-2">
               <h2 className="font-headline text-3xl font-bold text-on-surface leading-tight tracking-tight truncate">
                 {c.name}
               </h2>
@@ -74,19 +101,40 @@ export function CharacterCard({ c }: { c: CarouselCharacter; index: number }) {
               </button>
             </div>
 
+            {/* Meta — role · age · species (있을 때만) */}
+            {composeMeta(c) && (
+              <p className="label-mono text-primary/70 text-[10px] mb-2 truncate">
+                {composeMeta(c)}
+              </p>
+            )}
+
             {/* Tagline */}
-            <p className="text-on-surface-variant leading-relaxed mb-5 line-clamp-3 text-sm">
+            <p className="text-on-surface leading-relaxed mb-3 line-clamp-2 text-sm font-medium">
               {c.tagline}
             </p>
 
-            {/* Tag chips — sharp rectangles, no pills */}
+            {/* Backstory snippet — 있으면 2줄까지 회색 보조 */}
+            {c.backstorySummary && (
+              <p className="text-on-surface-variant leading-relaxed mb-3 line-clamp-2 text-xs">
+                {firstSentence(c.backstorySummary, 140)}
+              </p>
+            )}
+
+            {/* World context — 있으면 1줄 */}
+            {c.worldContext && (
+              <p className="text-on-surface-variant/80 leading-relaxed mb-4 line-clamp-1 text-[11px] italic">
+                {firstSentence(c.worldContext, 90)}
+              </p>
+            )}
+
+            {/* Tag chips — appearanceKeys / 기타 키워드. 샤프 직사각형. */}
             {(c.tags?.length ?? 0) > 0 && (
               <div className="flex flex-wrap gap-2 mb-6">
-                {(c.tags ?? []).slice(0, 3).map((t, i) => (
+                {(c.tags ?? []).slice(0, 4).map((t, i) => (
                   <span
                     key={t}
                     className={[
-                      "px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-sm",
+                      "px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-sm truncate max-w-[12rem]",
                       i === 0
                         ? "bg-tertiary-container text-on-tertiary-container"
                         : i === 1

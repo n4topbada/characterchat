@@ -9,8 +9,13 @@ export async function GET() {
   const gate = await requireAuth();
   if (gate instanceof NextResponse) return gate;
 
+  // 대화 기록 응답도 /history 페이지와 동일하게 "유저가 1회 이상 발화한
+  // 세션" 만 노출한다. 캐릭터에 진입만 하고 돌아간 empty session 은 숨긴다.
   const sessions = await prisma.session.findMany({
-    where: { userId: gate.userId },
+    where: {
+      userId: gate.userId,
+      messages: { some: { role: "user" } },
+    },
     orderBy: { lastMessageAt: "desc" },
     include: {
       character: {

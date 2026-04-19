@@ -60,8 +60,15 @@ export default async function HistoryPage() {
     redirect("/auth/signin?callbackUrl=/history");
   }
 
+  // 유저가 메시지를 단 한 번이라도 보낸 세션만 목록에 노출한다. 캐릭터
+   // 페이지에 들어갔다가 아무 말도 안 하고 나가면 Session 행은 남지만
+   // history 에서는 보이지 않아야 한다. (@@unique([userId, characterId]) 덕분에
+   // 다시 들어가면 같은 행이 재사용된다.)
   const rows = await prisma.session.findMany({
-    where: { userId: session.user.id },
+    where: {
+      userId: session.user.id,
+      messages: { some: { role: "user" } },
+    },
     orderBy: { lastMessageAt: "desc" },
     include: {
       character: {

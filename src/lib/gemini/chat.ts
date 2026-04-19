@@ -1,5 +1,5 @@
 import { HarmBlockThreshold, HarmCategory } from "@google/genai";
-import { withGeminiFallback } from "./client";
+import { withGeminiFallback, MODELS } from "./client";
 import type { MessageRole } from "@prisma/client";
 import {
   buildLegacySystemInstruction,
@@ -7,6 +7,31 @@ import {
   type ComposerContext,
   type LegacyPromptArgs,
 } from "./prompt";
+
+/**
+ * DB 에 저장된 model 문자열이 실존하지 않는 경우(예: 이전 시드의
+ * "gemini-3.0-flash") 업스트림이 NOT_FOUND 로 응답 에러를 내 채팅이 전혀 안
+ * 된다. 문제를 자동 복구하기 위해 알려진 안전 prefix 에 속하지 않으면
+ * MODELS.chat 으로 치환한다.
+ *
+ * - 허용 prefix: "gemini-2.5-", "gemini-2.0-", "gemini-1.5-",
+ *   "gemini-3.1-flash-lite", "gemini-3.1-flash"
+ *   (실험/프리뷰 preview 모델 포함)
+ */
+function normalizeModel(name: string | null | undefined): string {
+  if (!name) return MODELS.chat;
+  const trimmed = name.trim();
+  const ok =
+    /^gemini-2\.5-/.test(trimmed) ||
+    /^gemini-2\.0-/.test(trimmed) ||
+    /^gemini-1\.5-/.test(trimmed) ||
+    /^gemini-3\.1-flash(-lite)?/.test(trimmed);
+  if (ok) return trimmed;
+  console.warn(
+    `[chat] unknown model "${trimmed}" — falling back to ${MODELS.chat}`,
+  );
+  return MODELS.chat;
+}
 
 export type ChatTurn = {
   role: Exclude<MessageRole, "system" | "tool">;
@@ -51,9 +76,11 @@ export async function* streamChat(args: StreamArgs) {
     parts: [{ text: turn.content }],
   }));
 
+  const modelName = normalizeModel(args.model);
+
   const resp = await withGeminiFallback((ai) =>
     ai.models.generateContentStream({
-      model: args.model,
+      model: modelName,
       contents,
       config: {
         systemInstruction: args.systemInstruction,
