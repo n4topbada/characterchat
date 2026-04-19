@@ -50,7 +50,7 @@
 - `portraitAssetId` / `heroAssetId`: Asset 테이블의 id 문자열(FK 없음 — nullable 편의).
 
 ### CharacterConfig
-- `model`: Gemini 모델 ID. 기본값 `gemini-3.0-flash` ([07-llm-config §0](07-llm-config.md#0-모델-고정-정책-️-do-not-touch) 참고). 3.0 이상만 허용 — 하위 버전(2.x/1.x)은 런타임 `normalizeModel()` 이 강제 상향.
+- `model`: Gemini 모델 ID. 기본값 `gemini-3-flash-preview` ([07-llm-config §0](07-llm-config.md#0-모델-고정-정책-️-do-not-touch) 참고). 3 이상만 허용 — 하위 버전(2.x/1.x) 및 존재하지 않는 과거 오기입 `gemini-3.0-flash` 는 런타임 `normalizeModel()` 이 강제 교정.
 - `systemPrompt`: 페르소나 자체는 `PersonaCore`에서 합성하므로, **스타일 지시·출력 포맷 등 그 외 연출 규칙**만 담는다. 비워도 무방.
 - `characterPromptAddendum` / `featurePromptAddendum`: **deprecated**. 기존 호환을 위해 유지하되 신규 캐릭터는 비어 있다.
 - `greeting`: 세션 시작 직후 자동 모델 메시지(최대 500자 권장).

@@ -10,9 +10,11 @@ import { ulid } from "ulid";
 // MODELS.chat 와 동일 값. ESM import 경로 순환을 피하기 위해 하드코딩.
 // src/lib/gemini/client.ts 와 동기화되어야 한다.
 //
-// ⚠️ 채팅 모델은 gemini-3.0-flash 로 고정. 하위 버전(2.x/1.x) 금지.
+// ⚠️ 채팅 모델은 gemini-3-flash-preview 로 고정. 하위 버전(2.x/1.x) 금지.
+//    ("gemini-3.0-flash" 는 존재하지 않는 과거 오기입. normalizeModel 이
+//     런타임에 업그레이드하지만, 이 시드 루프가 DB 컬럼 자체를 먼저 교정한다.)
 // 정책 전문: docs/07-llm-config.md §0 "모델 고정 정책".
-const CHAT_MODEL = "gemini-3.0-flash";
+const CHAT_MODEL = "gemini-3-flash-preview";
 
 const prisma = new PrismaClient();
 
@@ -162,7 +164,7 @@ async function main() {
     if (existing) {
       // 이미 있는 캐릭터는 model 만 최신 값으로 덮어쓴다.
       // (이전 시드가 존재하지 않는 모델명 'gemini-3.0-flash' 를 넣어 response 에러
-      // 를 일으키던 문제를 자동 복구.)
+      // 를 일으키던 문제를 자동 복구. 실제 존재하는 ID 는 gemini-3-flash-preview.)
       if (existing.config && existing.config.model !== CHAT_MODEL) {
         await prisma.characterConfig.update({
           where: { characterId: existing.id },

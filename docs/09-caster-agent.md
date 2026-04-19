@@ -17,7 +17,7 @@ Caster는 **페르소나가 없는 디자이너 에이전트**다. 사용자(관
 
 | 항목 | 값 | 근거 |
 |---|---|---|
-| 모델 | `gemini-3.0-flash` | 빠른 리서치 루프 + 도구 호출 지원 |
+| 모델 | `gemini-3-flash-preview` ([07-llm-config §0](07-llm-config.md#0-모델-고정-정책-️-do-not-touch)) | 빠른 리서치 루프 + 도구 호출 지원 |
 | temperature | `1.5` | 아이디에이션 다양성 확보 (사용자 요구) |
 | topP | 0.95 | 기본 |
 | maxOutputTokens | 2048 | 한 턴 응답 여유 |
@@ -416,7 +416,7 @@ await prisma.$transaction(async (tx) => {
     accentColor: draft.accentColor,
     config: { create: {
       id: ulid(),
-      model: "gemini-3.0-flash",
+      model: "gemini-3-flash-preview",
       temperature: 0.8,
       maxOutputTokens: 1024,
       greeting: draft.greeting,

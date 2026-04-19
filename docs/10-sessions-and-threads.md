@@ -44,7 +44,7 @@ return 201({ session });
 
 ## 롤링 요약 (M5)
 - 트리거: 한 세션 누적 토큰 > 임계값.
-- 방법: 오래된 N개 메시지를 `MODELS.chat` (= `gemini-3.0-flash`) 으로 압축 → `Session.summary` 에 누적 병합. 요약도 하위 모델로 내려가지 않는다 ([07-llm-config §0](07-llm-config.md#0-모델-고정-정책-️-do-not-touch)).
+- 방법: 오래된 N개 메시지를 `MODELS.chat` (= `gemini-3-flash-preview`) 으로 압축 → `Session.summary` 에 누적 병합. 요약도 하위 모델로 내려가지 않는다 ([07-llm-config §0](07-llm-config.md#0-모델-고정-정책-️-do-not-touch)).
 - 요약된 메시지는 archive 플래그(`Message.archivedAt`)로 숨기고 프롬프트에서 제외(스키마에 추가 필요).
 - MVP 는 단순 "최근 20턴 컷오프"만. 롱 세션 실험 후 도입.
 

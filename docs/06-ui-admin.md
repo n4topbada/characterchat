@@ -44,7 +44,7 @@
 - 저장 버튼(오른쪽 고정) — 변경 없으면 disabled.
 
 ### 3) Config
-- Model: 기본 `gemini-3.0-flash` (고정 정책 — [07-llm-config §0](07-llm-config.md#0-모델-고정-정책-️-do-not-touch)). 관리자가 자유 입력으로 3.0 이상 모델로만 변경 가능. 하위 버전(2.x/1.x)을 입력해도 런타임 `normalizeModel()` 이 3.0-flash 로 강제 상향한다.
+- Model: 기본 `gemini-3-flash-preview` (고정 정책 — [07-llm-config §0](07-llm-config.md#0-모델-고정-정책-️-do-not-touch)). 관리자가 자유 입력으로 3 이상 모델로만 변경 가능. 하위 버전(2.x/1.x) 혹은 과거 오기입 `gemini-3.0-flash` (존재하지 않는 ID) 를 입력해도 런타임 `normalizeModel()` 이 `gemini-3-flash-preview` 로 강제 교정한다.
 - Temperature (0–2 슬라이더 + 숫자).
 - Top-P (0–1).
 - Top-K (1–40, 정수).

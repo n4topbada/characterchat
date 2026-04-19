@@ -182,10 +182,11 @@ async function main() {
   }
 
   // CharacterConfig upsert
-  // 채팅 모델은 gemini-3.0-flash 고정 (docs/07-llm-config.md §0).
+  // 채팅 모델은 gemini-3-flash-preview 고정 (docs/07-llm-config.md §0).
   // 스크립트라고 해서 하위 모델로 내리지 않는다.
+  // ("gemini-3.0-flash" 는 존재하지 않는 과거 오기입.)
   const cfgData = {
-    model: "gemini-3.0-flash",
+    model: "gemini-3-flash-preview",
     temperature: 0.85,
     maxOutputTokens: 1024,
     greeting: PERSONA.greeting,

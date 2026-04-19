@@ -2,26 +2,32 @@
 
 ## 0. 모델 고정 정책 ⚠️ DO NOT TOUCH
 
-**채팅 모델은 `gemini-3.0-flash` 로 고정.** 아래 세 가지를 동시에 반드시 따른다.
+**채팅 모델은 `gemini-3-flash-preview` 로 고정.** 아래 세 가지를 동시에 반드시 따른다.
+
+> **경고 — 과거 오기입**
+> 한동안 이 문서와 코드가 `gemini-3.0-flash` 라고 적었지만 **Google 측에 실제로는 존재하지 않는 ID** 였다. `generateContentStream` 이 조용히 빈 응답으로 떨어지면서 "아리아만 답이 안 나온다" 같은 증상을 만든다. 실제 존재하는 3.x 계열 ID 는 **`gemini-3-flash-preview`** (Google AI Studio/Fictory snippet 기준). 재등장 방지로 `normalizeModel()` 이 레거시 `gemini-3.0-flash` 문자열을 자동 교정한다.
 
 1. **하위 버전 금지.** `gemini-2.x-*`, `gemini-1.x-*` 같은 하위 버전으로는 **절대 내려가지 않는다.** 비용/지연이 아무리 매력적으로 보여도 불가. 캐릭터 발화 자연스러움·한국어 뉘앙스·장문 기억 유지 차이가 체감으로 크기 때문이다.
-2. **상향은 OK.** 추후 `gemini-3.1-flash`·`gemini-4.x` 등 **3.0 이상**의 신규 모델이 나오면 승격 가능. 승격은 언제나 `MODELS.chat` (`src/lib/gemini/client.ts`) 한 곳만 바꾸는 방식으로 한다.
-3. **런타임 가드.** DB 에 남은 하위 모델 문자열(이전 시드 실수 등)은 `src/lib/gemini/chat.ts` 의 `normalizeModel()` 이 감지해 `MODELS.chat` 으로 **강제 상향**한다. 개별 `CharacterConfig.model` 을 낮추더라도 실제 호출은 3.0-flash 로 끌어올려진다.
+2. **상향은 OK.** 추후 `gemini-3-flash` GA (프리뷰 꼬리 빠진 것), `gemini-3.5-*`, `gemini-4.x` 등 **3 이상**의 신규 모델이 나오면 승격 가능. 승격은 언제나 `MODELS.chat` (`src/lib/gemini/client.ts`) 한 곳만 바꾸는 방식으로 한다.
+3. **런타임 가드.** DB 에 남은 하위 모델 문자열(이전 시드 실수 등)과 **존재하지 않는 `gemini-3.0-flash`** 는 `src/lib/gemini/chat.ts` 의 `normalizeModel()` 이 감지해 `MODELS.chat` 으로 **강제 교정**한다. 개별 `CharacterConfig.model` 이 잘못되더라도 실제 호출은 `gemini-3-flash-preview` 로 끌어올려진다.
 
 ### 동기화되어야 하는 지점
 | 파일 | 위치 | 값 |
 |---|---|---|
-| `src/lib/gemini/client.ts` | `MODELS.chat` | `"gemini-3.0-flash"` |
-| `prisma/seed.ts` | `CHAT_MODEL` | `"gemini-3.0-flash"` |
-| `src/lib/gemini/chat.ts` | `normalizeModel()` 의 업그레이드 경로 | `gemini-[12]\.` 매치 시 → `MODELS.chat` |
-| 본 문서 §1 표의 `model` 기본값 | | `gemini-3.0-flash` |
+| `src/lib/gemini/client.ts` | `MODELS.chat` | `"gemini-3-flash-preview"` |
+| `prisma/seed.ts` | `CHAT_MODEL` | `"gemini-3-flash-preview"` |
+| `src/lib/gemini/chat.ts` | `normalizeModel()` 교정 경로 | `gemini-3\.0-flash` / `gemini-[12]\.` 매치 시 → `MODELS.chat` |
+| `src/app/api/admin/characters/route.ts` | POST 시 `model: MODELS.chat` | (상수 import) |
+| `scripts/upload-mira.ts` 등 업로드 스크립트 | `cfgData.model` | `"gemini-3-flash-preview"` |
+| 본 문서 §1 표의 `model` 기본값 | | `gemini-3-flash-preview` |
 
 ### 금지 사례
-- ❌ `gemini-2.5-flash-lite` / `gemini-2.5-flash-preview` / `gemini-1.5-pro` 등
-- ❌ "일단 2.5 로 테스트하고 나중에 올리자" — 테스트도 3.0 으로
-- ❌ 개별 캐릭터에 하위 모델을 꽂아 "이 한 명만 싸게 돌리자" 같은 최적화
+- ❌ `gemini-3.0-flash` — **존재하지 않는 ID.** 지금 이 문서가 시정하는 대상이 바로 이 값이다
+- ❌ `gemini-2.5-flash-lite` / `gemini-2.5-flash-preview` / `gemini-1.5-pro` 등 하위 버전
+- ❌ "일단 2.5 로 테스트하고 나중에 올리자" — 테스트도 gemini-3-flash-preview 로
+- ❌ 개별 캐릭터에 하위/가짜 모델을 꽂아 "이 한 명만 싸게/테스트로 돌리자" 같은 최적화
 
-이 정책을 우회해야 할 예외가 생기면 코드가 아니라 **이 섹션을 먼저 업데이트**한 뒤 PR 에 사유를 남긴다.
+이 정책을 우회해야 할 예외가 생기면 코드가 아니라 **이 섹션을 먼저 업데이트**한 뒤 PR 에 사유를 남긴다. 특히 모델 ID 를 바꾸려면 **실제 `ai.models.generateContentStream` 호출이 성공하는지 확인**한 snippet 을 함께 근거로 남길 것 (과거 오기입이 재발한 주된 원인).
 
 ---
 
@@ -40,7 +46,7 @@
 
 | 필드 | 타입 | 필수 | 기본값 | 범위/예시 | 설명 |
 |---|---|---|---|---|---|
-| model | string | O | `gemini-3.0-flash` | Gemini 모델 ID | 채팅 생성에 사용할 모델. |
+| model | string | O | `gemini-3-flash-preview` | Gemini 모델 ID | 채팅 생성에 사용할 모델. §0 모델 고정 정책. |
 | temperature | float | O | `0.8` | 0.0 ~ 2.0 | 낮을수록 결정적. 캐릭터 개성을 살릴 때 0.7~1.0. 서사가 단조로우면 1.0~1.2 까지. |
 | topP | float | X | null | 0.0 ~ 1.0 | nucleus sampling. null 이면 모델 기본값. |
 | topK | int | X | null | 1 ~ 40 | 토큰 후보 상한. |
@@ -138,5 +144,5 @@ export const DEFAULT_SAFETY = [
 ## 6. 주의
 - `maxOutputTokens` 가 너무 작으면 상태창이 잘린다. 권장 ≥ 512 (상태창 ON 이면 ≥ 768).
 - `safetySettings` 를 낮추면 유해 응답 가능성 증가. 감사(audit) 기능은 M5.
-- 모델 ID 는 **§0 모델 고정 정책** 을 따른다. 하위 버전(2.x/1.x) 로 절대 내리지 말 것. 상향(3.1+/4.x)만 허용되며, 상향 시에도 `MODELS.chat` 한 곳을 바꾼 뒤 §0 표를 업데이트한다. 개별 `CharacterConfig.model` 을 하위로 바꿔도 런타임 `normalizeModel()` 이 3.0-flash 로 강제 상향한다.
+- 모델 ID 는 **§0 모델 고정 정책** 을 따른다. 하위 버전(2.x/1.x) 로 절대 내리지 말 것. 상향(3-flash GA/3.5/4.x)만 허용되며, 상향 시에도 `MODELS.chat` 한 곳을 바꾼 뒤 §0 표를 업데이트한다. 개별 `CharacterConfig.model` 을 하위/가짜 값으로 바꿔도 런타임 `normalizeModel()` 이 `gemini-3-flash-preview` 로 강제 교정한다.
 - 페르소나를 갱신하려면 `PersonaCore` 를 편집(admin UI)하거나 **Caster 재-commit** — 더이상 systemPrompt 를 건드리지 않는다.

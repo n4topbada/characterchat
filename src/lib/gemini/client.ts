@@ -117,17 +117,21 @@ function describeErr(e: unknown): string {
 /**
  * 프로젝트 전역 모델 ID.
  *
- * ⚠️ 채팅 모델(chat)은 **gemini-3.0-flash 로 고정**한다.
+ * ⚠️ 채팅 모델(chat)은 **gemini-3-flash-preview 로 고정**한다.
+ *   - 이건 Google AI Studio 에서 확인한 **실제 존재하는** 모델 ID.
+ *   - 이전에 코드 전체에 박아뒀던 "gemini-3.0-flash" 는 존재하지 않는
+ *     가짜 ID 였고, generateContentStream 호출이 실패해 빈 응답으로 떨어졌다.
  *   - gemini-2.x / 1.x 같은 하위 버전으로 절대 내려가지 않는다.
  *   - 품질이 가장 중요한 축이고, 캐릭터 발화의 자연스러움 차이가 크다.
- *   - 향후 상향(= 3.1+ / 4.x) 은 OK. 하위로만 금지.
+ *   - 향후 상향(= gemini-3-flash GA / 3.5 / 4.x) 은 OK. 하위로만 금지.
  *   - 자세한 정책은 docs/07-llm-config.md §0 "모델 고정 정책" 참고.
  *
  * normalizeModel() (src/lib/gemini/chat.ts) 이 DB 에 남은 레거시 하위 모델
- * 문자열을 감지해 런타임에 MODELS.chat 으로 끌어올린다.
+ * 문자열 + 가짜 "gemini-3.0-flash" 를 감지해 런타임에 MODELS.chat 으로
+ * 끌어올린다.
  */
 export const MODELS = {
-  chat: "gemini-3.0-flash",
+  chat: "gemini-3-flash-preview",
   image: "gemini-3.1-flash-image-preview",
   embed: "text-embedding-004",
 } as const;
