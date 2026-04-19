@@ -4,11 +4,14 @@
 //
 // 흐름:
 //   1) 유저가 메시지를 보내면 SSE 로 서버와 연결.
-//   2) 서버는 delta(텍스트), search(검색어), sources(링크), patch(드래프트), done 이벤트를 흘림.
-//   3) 우측 시트가 patch 를 받을 때마다 갱신되며, 최근 변경된 필드는 짧게 강조.
-//   4) 시트가 충분히 채워지면 "커밋" 으로 Character 를 생성.
+//   2) 서버는 delta / search / sources / source_image / patch / done 이벤트를 흘림.
+//   3) assistant 메시지 하단에 검색 소스의 OG 이미지를 중간 크기 썸네일 그리드로 렌더.
+//   4) 관리자가 썸네일의 "이 느낌" 을 클릭하면 해당 이미지 URL 을 imageRef 로 첨부해 다시 전송.
+//      서버가 그 이미지를 바이트로 불러와 Gemini 에 멀티모달로 넘기고, Caster 가 외형/배경 등을
+//      분석해 <patch> 로 시트를 업데이트.
+//   5) 시트가 충분히 채워지면 "커밋" 으로 Character 를 생성.
 //
-// UI 는 모바일 세로/데스크톱 가로 모두 스크롤이 되게 구성했다.
+// 이미지는 UI 전용 — DB 에는 소스 URL / title / domain 만 저장된다.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -20,6 +23,8 @@ import {
   ExternalLink,
   Code2,
   AlertCircle,
+  Check,
+  X,
 } from "lucide-react";
 import {
   CharacterSheet,
@@ -31,6 +36,15 @@ export type CasterSource = {
   uri: string;
   title?: string;
   domain?: string;
+  /** 세션 전용 OG 이미지 URL — source_image SSE 이벤트로 덧붙는다. DB 에 저장 X. */
+  image?: string;
+};
+
+type ImageRef = {
+  uri: string;
+  image: string;
+  title?: string;
+  domain?: string;
 };
 
 export type CasterMessage = {
@@ -39,6 +53,8 @@ export type CasterMessage = {
   content: string;
   searchQueries?: string[];
   sources?: CasterSource[];
+  /** 유저가 썸네일을 "이 느낌" 으로 확정했을 때 해당 메시지에 inline preview 로 깔린다. */
+  previewImage?: string;
   createdAt: string;
 };
 
@@ -143,7 +159,6 @@ export function CasterConsole({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  // JSON 모드를 켤 때마다 현재 draft 로 동기화
   useEffect(() => {
     if (jsonMode) {
       setJsonText(JSON.stringify(draft ?? {}, null, 2));
@@ -160,112 +175,173 @@ export function CasterConsole({
     });
   }, []);
 
-  const send = useCallback(async () => {
-    const text = input.trim();
-    if (!text || streaming) return;
-    setInput("");
-    setError(null);
-    setValidationIssues([]);
+  /**
+   * 실제 전송 로직. text 와 선택적 imageRef/previewImage 를 받는다.
+   * - text: 유저 버블에 보일 본문
+   * - imageRef: 서버가 Gemini 에 멀티모달로 보낼 이미지 레퍼런스
+   * - previewImage: 유저 버블에 inline 썸네일로 보일 이미지 URL
+   */
+  const dispatch = useCallback(
+    async (
+      text: string,
+      opts?: { imageRef?: ImageRef; previewImage?: string },
+    ) => {
+      const trimmed = text.trim();
+      if (!trimmed || streaming) return;
+      setError(null);
+      setValidationIssues([]);
 
-    const userMsg: CasterMessage = {
-      id: "tmp-u-" + Date.now(),
-      role: "user",
-      content: text,
-      createdAt: new Date().toISOString(),
-    };
-    const modelId = "tmp-m-" + Date.now();
-    const modelInit: CasterMessage = {
-      id: modelId,
-      role: "model",
-      content: "",
-      searchQueries: [],
-      sources: [],
-      createdAt: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg, modelInit]);
-    setStreaming(true);
+      const userMsg: CasterMessage = {
+        id: "tmp-u-" + Date.now(),
+        role: "user",
+        content: trimmed,
+        previewImage: opts?.previewImage,
+        createdAt: new Date().toISOString(),
+      };
+      const modelId = "tmp-m-" + (Date.now() + 1);
+      const modelInit: CasterMessage = {
+        id: modelId,
+        role: "model",
+        content: "",
+        searchQueries: [],
+        sources: [],
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, userMsg, modelInit]);
+      setStreaming(true);
 
-    try {
-      const r = await fetch(`/api/admin/caster/runs/${runId}/messages`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content: text }),
-      });
-      if (!r.ok || !r.body) {
-        setError(`요청 실패 (${r.status})`);
-        setStreaming(false);
-        return;
-      }
-      const reader = r.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() ?? "";
-        for (const frame of frames) {
-          const lines = frame.split("\n");
-          const evLine = lines.find((l) => l.startsWith("event:"));
-          const dataLine = lines.find((l) => l.startsWith("data:"));
-          if (!evLine || !dataLine) continue;
-          const event = evLine.slice(6).trim();
-          const data = dataLine.slice(5).trim();
-          try {
-            if (event === "delta") {
-              const { text: t } = JSON.parse(data) as { text: string };
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === modelId ? { ...m, content: m.content + t } : m,
-                ),
-              );
-            } else if (event === "search") {
-              const { queries } = JSON.parse(data) as { queries: string[] };
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === modelId
-                    ? {
-                        ...m,
-                        searchQueries: [
-                          ...(m.searchQueries ?? []),
-                          ...queries,
-                        ],
-                      }
-                    : m,
-                ),
-              );
-            } else if (event === "sources") {
-              const { sources } = JSON.parse(data) as {
-                sources: CasterSource[];
-              };
-              setMessages((prev) =>
-                prev.map((m) => {
-                  if (m.id !== modelId) return m;
-                  const merged = [...(m.sources ?? [])];
-                  for (const s of sources) {
-                    if (!merged.some((x) => x.uri === s.uri)) merged.push(s);
-                  }
-                  return { ...m, sources: merged };
-                }),
-              );
-            } else if (event === "patch") {
-              const { draft: d } = JSON.parse(data) as { draft: Draft };
-              applyPatch(d);
-              setStatus("draft_ready");
-            } else if (event === "error") {
-              const { message } = JSON.parse(data) as { message: string };
-              setError(message);
+      try {
+        const r = await fetch(`/api/admin/caster/runs/${runId}/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            content: trimmed,
+            imageRef: opts?.imageRef ?? null,
+          }),
+        });
+        if (!r.ok || !r.body) {
+          setError(`요청 실패 (${r.status})`);
+          setStreaming(false);
+          return;
+        }
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split("\n\n");
+          buffer = frames.pop() ?? "";
+          for (const frame of frames) {
+            const lines = frame.split("\n");
+            const evLine = lines.find((l) => l.startsWith("event:"));
+            const dataLine = lines.find((l) => l.startsWith("data:"));
+            if (!evLine || !dataLine) continue;
+            const event = evLine.slice(6).trim();
+            const data = dataLine.slice(5).trim();
+            try {
+              if (event === "delta") {
+                const { text: t } = JSON.parse(data) as { text: string };
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === modelId ? { ...m, content: m.content + t } : m,
+                  ),
+                );
+              } else if (event === "search") {
+                const { queries } = JSON.parse(data) as { queries: string[] };
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === modelId
+                      ? {
+                          ...m,
+                          searchQueries: [
+                            ...(m.searchQueries ?? []),
+                            ...queries,
+                          ],
+                        }
+                      : m,
+                  ),
+                );
+              } else if (event === "sources") {
+                const { sources } = JSON.parse(data) as {
+                  sources: CasterSource[];
+                };
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id !== modelId) return m;
+                    const merged = [...(m.sources ?? [])];
+                    for (const s of sources) {
+                      if (!merged.some((x) => x.uri === s.uri)) merged.push(s);
+                    }
+                    return { ...m, sources: merged };
+                  }),
+                );
+              } else if (event === "source_image") {
+                const { uri, image } = JSON.parse(data) as {
+                  uri: string;
+                  image: string;
+                };
+                // 해당 assistant 메시지의 sources 에서 uri 매칭 → image 덧붙임
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id !== modelId || !m.sources) return m;
+                    return {
+                      ...m,
+                      sources: m.sources.map((s) =>
+                        s.uri === uri ? { ...s, image } : s,
+                      ),
+                    };
+                  }),
+                );
+              } else if (event === "patch") {
+                const { draft: d } = JSON.parse(data) as { draft: Draft };
+                applyPatch(d);
+                setStatus("draft_ready");
+              } else if (event === "error") {
+                const { message } = JSON.parse(data) as { message: string };
+                setError(message);
+              }
+            } catch {
+              // ignore frame parse errors
             }
-          } catch {
-            // ignore frame parse errors
           }
         }
+      } finally {
+        setStreaming(false);
       }
-    } finally {
-      setStreaming(false);
-    }
-  }, [input, streaming, runId, applyPatch]);
+    },
+    [streaming, runId, applyPatch],
+  );
+
+  const sendInput = useCallback(async () => {
+    if (!input.trim()) return;
+    const text = input;
+    setInput("");
+    await dispatch(text);
+  }, [input, dispatch]);
+
+  const confirmImage = useCallback(
+    async (src: CasterSource) => {
+      if (!src.image) return;
+      const label = src.title ?? src.domain ?? src.uri;
+      const text = `이 이미지 느낌이 맞아 — "${label}"`;
+      await dispatch(text, {
+        imageRef: {
+          uri: src.uri,
+          image: src.image,
+          title: src.title,
+          domain: src.domain,
+        },
+        previewImage: src.image,
+      });
+    },
+    [dispatch],
+  );
+
+  const rejectImages = useCallback(async () => {
+    await dispatch("이 중엔 없어. 다른 방향/느낌으로 레퍼런스를 다시 찾아줘.");
+  }, [dispatch]);
 
   // ---------- commit ----------
 
@@ -331,9 +407,7 @@ export function CasterConsole({
           | null;
         if (j?.issues?.length) {
           setValidationIssues(
-            j.issues.map(
-              (it) => `${it.path.join(".")}: ${it.message}`,
-            ),
+            j.issues.map((it) => `${it.path.join(".")}: ${it.message}`),
           );
         } else {
           setError(j?.error ?? `commit 실패 (${r.status})`);
@@ -385,7 +459,15 @@ export function CasterConsole({
           {messages.length === 0 ? (
             <EmptyHint />
           ) : (
-            messages.map((m) => <MessageBlock key={m.id} msg={m} />)
+            messages.map((m) => (
+              <MessageBlock
+                key={m.id}
+                msg={m}
+                onConfirmImage={confirmImage}
+                onRejectImages={rejectImages}
+                disabled={streaming || status === "saved"}
+              />
+            ))
           )}
           <div ref={bottomRef} />
         </div>
@@ -397,7 +479,7 @@ export function CasterConsole({
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
-                void send();
+                void sendInput();
               }
             }}
             placeholder="메시지 (Cmd/Ctrl+Enter 로 전송)"
@@ -406,7 +488,7 @@ export function CasterConsole({
           />
           <button
             type="button"
-            onClick={send}
+            onClick={sendInput}
             disabled={streaming || !input.trim() || status === "saved"}
             className="flex w-10 shrink-0 items-center justify-center rounded-md bg-primary text-on-primary disabled:opacity-50"
             aria-label="전송"
@@ -555,16 +637,32 @@ function EmptyHint() {
       </ul>
       <p className="mt-2 text-[11px] text-on-surface-variant/80">
         Caster 가 한 번에 한 가지씩 물어가며 시트를 채웁니다. 필요하면 Google
-        검색으로 사실을 확인해 반영합니다.
+        검색으로 사실을 확인하고, 외형 단계에서는 썸네일을 보여주니 "이 느낌"
+        을 눌러 확정해 주세요.
       </p>
     </div>
   );
 }
 
-function MessageBlock({ msg }: { msg: CasterMessage }) {
+function MessageBlock({
+  msg,
+  onConfirmImage,
+  onRejectImages,
+  disabled,
+}: {
+  msg: CasterMessage;
+  onConfirmImage: (s: CasterSource) => void | Promise<void>;
+  onRejectImages: () => void | Promise<void>;
+  disabled: boolean;
+}) {
   const isUser = msg.role === "user";
+  const sourcesWithImages =
+    msg.sources?.filter((s) => !!s.image) ?? [];
+  const sourcesWithoutImages =
+    msg.sources?.filter((s) => !s.image) ?? [];
+
   return (
-    <div className={isUser ? "flex justify-end" : "space-y-1.5"}>
+    <div className={isUser ? "flex flex-col items-end gap-1.5" : "space-y-1.5"}>
       {!isUser && msg.searchQueries && msg.searchQueries.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5 pl-1 text-[11px] text-on-surface-variant">
           <Search size={11} />
@@ -579,19 +677,61 @@ function MessageBlock({ msg }: { msg: CasterMessage }) {
           ))}
         </div>
       ) : null}
+
       <div
         className={[
           "max-w-[85%] whitespace-pre-wrap break-words rounded-lg px-3 py-2 text-sm",
           isUser
-            ? "ml-auto bg-primary-container text-on-primary-container"
+            ? "bg-primary-container text-on-primary-container"
             : "mr-auto bg-surface-container text-on-surface",
         ].join(" ")}
       >
         {msg.content || (!isUser ? "…" : "")}
       </div>
-      {!isUser && msg.sources && msg.sources.length > 0 ? (
+
+      {/* user bubble: 확정한 썸네일 인라인 프리뷰 */}
+      {isUser && msg.previewImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={msg.previewImage}
+          alt=""
+          referrerPolicy="no-referrer"
+          className="h-28 w-28 rounded-md object-cover ring-2 ring-primary/60"
+        />
+      ) : null}
+
+      {/* assistant: 이미지가 달린 썸네일 그리드 */}
+      {!isUser && sourcesWithImages.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="pl-1 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+            이 느낌이 맞아요?
+          </p>
+          <div className="grid max-w-[560px] grid-cols-3 gap-2 sm:grid-cols-4">
+            {sourcesWithImages.map((s) => (
+              <ThumbCard
+                key={s.uri}
+                source={s}
+                disabled={disabled}
+                onConfirm={() => onConfirmImage(s)}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => void onRejectImages()}
+            disabled={disabled}
+            className="inline-flex items-center gap-1 rounded-md border border-outline/30 px-2 py-1 text-[11px] text-on-surface-variant hover:bg-surface-container disabled:opacity-50"
+          >
+            <X size={11} />
+            이 중엔 없어  다른 느낌
+          </button>
+        </div>
+      ) : null}
+
+      {/* 이미지가 없는 나머지 링크 칩 */}
+      {!isUser && sourcesWithoutImages.length > 0 ? (
         <div className="flex max-w-[85%] flex-wrap gap-1 pl-1">
-          {msg.sources.map((s, i) => (
+          {sourcesWithoutImages.map((s, i) => (
             <a
               key={i}
               href={s.uri}
@@ -608,6 +748,59 @@ function MessageBlock({ msg }: { msg: CasterMessage }) {
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ThumbCard({
+  source,
+  disabled,
+  onConfirm,
+}: {
+  source: CasterSource;
+  disabled: boolean;
+  onConfirm: () => void;
+}) {
+  if (!source.image) return null;
+  return (
+    <div className="group relative overflow-hidden rounded-md border border-outline/30 bg-surface-container">
+      <a
+        href={source.uri}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="block"
+        title={source.title ?? source.uri}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={source.image}
+          alt={source.title ?? ""}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          className="h-32 w-full object-cover transition-transform group-hover:scale-[1.02]"
+        />
+        <div className="px-1.5 py-1 text-[10px] leading-tight">
+          <p className="truncate font-semibold text-on-surface">
+            {source.title ?? source.uri}
+          </p>
+          {source.domain ? (
+            <p className="truncate text-on-surface-variant">{source.domain}</p>
+          ) : null}
+        </div>
+      </a>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onConfirm();
+        }}
+        disabled={disabled}
+        className="absolute right-1 top-1 inline-flex items-center gap-1 rounded-md bg-primary/95 px-1.5 py-1 text-[10px] font-bold text-on-primary shadow-sm opacity-90 transition-opacity hover:opacity-100 disabled:opacity-40"
+      >
+        <Check size={11} />
+        이 느낌
+      </button>
     </div>
   );
 }

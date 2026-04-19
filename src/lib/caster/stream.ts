@@ -8,7 +8,15 @@
 
 import { withGeminiFallback } from "@/lib/gemini/client";
 
-export type CasterHistoryTurn = { role: "user" | "model"; content: string };
+// 멀티모달 대응 — 턴은 parts 배열로 구성된다 (텍스트 + 인라인 이미지).
+export type CasterContentPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
+
+export type CasterHistoryTurn = {
+  role: "user" | "model";
+  parts: CasterContentPart[];
+};
 
 export type CasterSource = {
   uri: string;
@@ -54,7 +62,7 @@ export async function* streamCaster(
 ): AsyncGenerator<CasterStreamEvent> {
   const contents = args.history.map((turn) => ({
     role: turn.role === "model" ? "model" : "user",
-    parts: [{ text: turn.content }],
+    parts: turn.parts,
   }));
 
   const tools =
