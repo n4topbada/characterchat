@@ -75,20 +75,20 @@ export function sanitizeModelBody(input: string): string {
   return s.replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ");
 }
 
-// 모델 응답을 문단 단위로 쪼개, 세 가지 종류로 분류한다.
-//   - "narration"  : 문단이 통째로 *...*(asterisk narration) 로 이루어진 행동 묘사
-//   - "dialogue"   : 따옴표로 감싼 직접 발화가 포함된 문단 (말풍선 렌더링)
-//   - "omniscient" : 따옴표도 별표도 없는 평문 — 전지적 작가 시점 서술
+// 모델 응답을 문단 단위로 쪼개, 두 가지 종류로 분류한다.
+//   - "narration" : 문단 전체가 *...*(asterisk) 안의 행동 묘사로만 이루어진 경우
+//   - "dialogue"  : 그 외 전부 — 따옴표 유무와 관계없이 캐릭터 발화 취급(버블)
 //
-// 따옴표 판정: "...", '...', 「...」, ‘...’, “...” (전각 한국어/일본어 스타일 포함).
-// action narration (*...*) 이 섞여 있고 따옴표도 있으면 "dialogue" 우선.
-// 따옴표 없이 *...* 섞여 있으면 "narration" (기존 규칙 유지).
+// 핵심 규칙: *별표* 가 곧 narration 마커. 모델이 따옴표를 깜빡해도 일반 평문은
+// 대사 버블로 간다. 과거에 "omniscient(전지적 작가 시점)" 카테고리를 두었으나
+// 모델이 따옴표를 자주 생략해 dialogue 가 omniscient 로 오분류되는 회귀가 반복돼
+// 제거. 장면 서술이 필요하면 모델이 *...* 로 감싸면 된다.
+//
+// 혼합 문단(대사 + *짧은 행동*) 은 dialogue 로 두고, 버블 내부에서
+// NarrationText 가 *...* 조각을 이탤릭 span 으로 렌더한다.
 export type DialogueBlock =
   | { kind: "narration"; value: string }
-  | { kind: "dialogue"; value: string }
-  | { kind: "omniscient"; value: string };
-
-const QUOTE_RE = /["“”„『』「」《》'‘’]/;
+  | { kind: "dialogue"; value: string };
 
 export function splitDialogueBlocks(input: string): DialogueBlock[] {
   const paragraphs = input
@@ -100,25 +100,15 @@ export function splitDialogueBlocks(input: string): DialogueBlock[] {
     const segs = splitNarration(p).filter((s) => s.value.trim().length > 0);
     const allNarration =
       segs.length > 0 && segs.every((s) => s.kind === "narration");
-    const hasQuote = QUOTE_RE.test(p);
 
-    if (hasQuote) {
-      // 따옴표 있는 문단은 항상 대사 취급. 내부의 *행동* 은 bubble 안에서 이탤릭으로.
-      return { kind: "dialogue", value: p };
-    }
     if (allNarration) {
-      // 전부 *...* 만으로 구성된 행동 묘사
+      // 전체가 *...* 만으로 이루어진 순수 행동 묘사 문단
       return {
         kind: "narration",
         value: segs.map((s) => s.value).join(" ").trim(),
       };
     }
-    const hasAnyNarration = segs.some((s) => s.kind === "narration");
-    if (hasAnyNarration) {
-      // *...* 가 일부 섞여 있으나 따옴표는 없음 — 혼합 서술로 보고 narration 취급.
-      return { kind: "narration", value: p };
-    }
-    // 따옴표도 *별표* 도 없는 평문 — 전지적 작가 시점 서술.
-    return { kind: "omniscient", value: p };
+    // 그 외 모두 대사 취급. 내부 *행동* 은 bubble 안에서 이탤릭으로.
+    return { kind: "dialogue", value: p };
   });
 }

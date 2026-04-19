@@ -99,18 +99,8 @@ export function MessageBubble({
               </p>
             );
           }
-          if (block.kind === "omniscient") {
-            // 전지적 작가 시점 — 버블 없이 평문, 본문 색상은 유지하되 약간 톤다운.
-            return (
-              <p
-                key={i}
-                className="text-sm leading-relaxed whitespace-pre-wrap break-words px-2 text-on-surface-variant"
-              >
-                {block.value}
-              </p>
-            );
-          }
-          // dialogue — 말풍선
+          // dialogue — 말풍선. 문단 내부의 *행동* 조각은 NarrationText 가
+          // 이탤릭 span 으로 분리 렌더.
           return (
             <div
               key={i}
