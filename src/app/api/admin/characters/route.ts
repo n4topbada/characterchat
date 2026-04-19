@@ -65,8 +65,8 @@ export async function POST(req: Request) {
       config: {
         create: {
           id: ulid(),
-          // 채팅 모델은 MODELS.chat (gemini-3-flash-preview) 로 고정.
-          // docs/07-llm-config.md §0 참고.
+          // 채팅 모델은 카탈로그(MODELS.chat) 에서만 가져온다.
+          // 카탈로그 전문: src/lib/gemini/models.ts, 정책: docs/07-llm-config.md §0.
           model: MODELS.chat,
           temperature: 0.8,
           maxOutputTokens: 1024,
