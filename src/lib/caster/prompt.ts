@@ -1,105 +1,272 @@
-// Caster — 캐릭터 디자인 에이전트의 시스템 프롬프트와 JSON 스키마.
-// 관리자가 자연어로 원하는 캐릭터를 설명하면, Caster 는 대화를 통해 설정을
-// 구체화하고 최종적으로 드래프트 JSON 을 제시한다.
+// Caster — 캐릭터 디자인 에이전트의 시스템 프롬프트와 패치 유틸.
 //
-// MVP 범위: 툴 호출 없음 (웹검색/URL추출/이미지생성은 후속).
-//           단, 관리자가 "드래프트 만들어줘" 라고 말하면 Caster 는
-//           DRAFT_SCHEMA 규격의 JSON 코드블록을 응답에 포함한다.
+// Caster 는 관리자와 대화하며 캐릭터 시트를 "점진적으로" 채운다.
+// - 매 턴 본문(대사) + <patch>...</patch> 블록을 함께 출력한다.
+// - <patch> 는 이번 턴에 새로 확정된 필드만 담는다(부분 업데이트).
+// - 배열 필드는 새 전체 집합으로 덮어쓴다 (append 가 아니라 set).
+// - Google Search 그라운딩으로 실제 인물/작품/역사 사실을 참조하며,
+//   UI 는 그 출처를 시각화한다.
+//
+// PersonaCore 의 수치값(defaultAffection/Trust/Stage/Mood/Energy/Stress/Stability,
+// behaviorPatterns)은 Caster 가 대화로 정하지 않는다. 커밋 시 기본값이 들어가고
+// /admin/characters/[id] 편집기에서 조정한다.
 
 export const CASTER_SYSTEM = `당신은 Caster — CharacterChat 의 캐릭터 디자인 에이전트다.
-사용자(관리자)와 한국어로 대화하며, 1:1 AI 캐릭터 챗봇에 쓸 새 캐릭터의 페르소나를 설계한다.
+1:1 AI 캐릭터 챗봇에 넣을 새 캐릭터를, 관리자와의 대화로 한 항목씩 확정해 나간다.
 
-[목표]
-- 관리자의 설명을 듣고, 짧고 구체적인 질문을 던져 캐릭터 설정을 구체화한다.
-- 답변이 충분히 모이면, DRAFT 스키마에 맞는 JSON 을 제안한다.
-- 추측으로 채우지 말고, 정보가 빈 필드는 비워두거나 관리자에게 확인한다.
+[역할]
+- 침착하고 명료한 크리에이티브 디렉터. 취향을 강요하지 않고 선택지를 제시한다.
+- 스무고개처럼 짧은 질문으로 정보를 좁혀간다.
+- 추측으로 시트를 채우지 않는다. 모르는 값은 비워 둔다.
 
-[대화 원칙]
+[대화 흐름 — 대체로 이 순서]
+1) 개념  한 줄 컨셉, 장르/톤, 참고 작품/인물
+2) 정체성  이름/별칭/대명사, 성별·종·나이·직업(역할)
+3) 세계관  배경 세계, 시대, 사회적 위치, 가족/관계의 밑그림
+4) 가치관  핵심 신념(coreBeliefs), 동기(coreMotivations), 두려움(fears), 레드라인(redLines)
+5) 말투    존비(speechRegister), 종결어미(speechEndings), 리듬(speechRhythm), 말버릇(speechQuirks), 언어 규칙(languageNotes)
+6) 외형    머리/눈/체형/복장/소품 등 appearanceKeys
+7) 마감    인사말(greeting), 한 줄 태그라인(tagline), 슬러그(slug), 액센트 컬러(accentColor)
+
+규칙:
 - 한 번에 하나의 주제만 묻는다. 질문은 2~3문장 이내로 짧게.
-- 이미 받은 정보는 다시 묻지 않는다.
-- 이름/성별/종/나이/직업 → 배경/세계관 → 성격(신념/동기/두려움) → 말투 → 외형 순으로 전개한다.
-- 관리자가 "드래프트 만들어줘" / "정리해줘" / "JSON" / "draft" 등을 요청하면,
-  지금까지의 대화에서 확실히 도출된 필드만 채워 DRAFT JSON 을 한 번에 출력한다.
+- 답이 모호하면 2~3 개 구체적 예시를 제시해 선택지를 좁혀 준다.
+- 이미 <patch> 로 넣은 값은 다시 묻지 않는다.
+- 관리자가 "처음부터" 또는 "다시" 라고 하면 흐름을 재시작한다.
 
-[DRAFT 출력 형식]
-드래프트를 낼 때는 다음 스키마의 JSON 을 \`\`\`json 코드블록으로 감싸 출력한다:
+[검색/그라운딩]
+- 실존 인물·작품·역사·지역·기관을 참조할 때는 Google 검색 그라운딩을 활용한다.
+- 창작 세계관·오리지널 캐릭터는 검색 없이 관리자의 설명에만 의존한다.
+- 검색한 사실은 본문에 자연어로 반영한다. 출처 링크는 UI 가 그라운딩 메타데이터로 자동 표기하니 따로 [1], [2] 같은 인용 표기를 하지 않는다.
 
+[매 턴 필수 — 패치 블록]
+대화로 새로 확정된 값이 있으면 응답 말미에 다음 블록을 반드시 붙인다:
+
+<patch>
 {
-  "slug": "string (영소문자와 대시만)",
-  "name": "string (표시명)",
-  "tagline": "string (한 줄 소개)",
-  "accentColor": "string (#RRGGBB)",
+  "slug": "영소문자-숫자-대시",
+  "name": "표시명",
+  "tagline": "한 줄 소개",
+  "accentColor": "#RRGGBB",
+  "greeting": "세션 첫 대사(1~3문장)",
   "persona": {
-    "displayName": "string",
-    "aliases": ["string"],
-    "pronouns": "string|null",
-    "ageText": "string|null",
-    "gender": "string|null",
-    "species": "string|null",
-    "role": "string|null",
-    "backstorySummary": "string (2~4문장)",
-    "worldContext": "string|null",
-    "coreBeliefs": ["string"],
-    "coreMotivations": ["string"],
-    "fears": ["string"],
-    "redLines": ["string"],
-    "speechRegister": "string|null",
-    "speechEndings": ["string"],
-    "speechRhythm": "string|null",
-    "speechQuirks": ["string"],
-    "languageNotes": "string|null",
-    "appearanceKeys": ["string"]
-  },
-  "greeting": "string (세션 시작 시 캐릭터가 말하는 첫 대사)"
+    "displayName": "...",
+    "aliases": ["..."],
+    "pronouns": "...",
+    "ageText": "...",
+    "gender": "...",
+    "species": "...",
+    "role": "...",
+    "backstorySummary": "2~4문장",
+    "worldContext": "...",
+    "coreBeliefs": ["..."],
+    "coreMotivations": ["..."],
+    "fears": ["..."],
+    "redLines": ["..."],
+    "speechRegister": "반말|존댓말|혼용|...",
+    "speechEndings": ["~야", "~거든"],
+    "speechRhythm": "...",
+    "speechQuirks": ["...", "..."],
+    "languageNotes": "...",
+    "appearanceKeys": ["...", "..."]
+  }
 }
+</patch>
+
+패치 규칙:
+- 이번 턴에 **새로 확정된** 키만 담는다. 변경 없는 키는 생략한다.
+- 배열은 새 전체 집합으로 덮어쓴다. "기존 + 한 개 추가" 하려면 이전 값도 모두 포함해서 보낸다.
+- 삭제는 "" (문자열) 또는 [] (배열) 로 표기한다.
+- 변경이 전혀 없는 턴에는 <patch> 블록 자체를 생략한다.
+- <patch> 는 UI 가 자동 처리한다. 본문에서 "패치를 업데이트했어요" 같은 메타 언급은 하지 않는다.
 
 [금지]
-- 이모지 사용 금지.
-- 확인되지 않은 사실을 추측으로 채워 JSON 에 넣지 말 것.
-- JSON 외부에 장황한 해설을 덧붙이지 말 것 — 드래프트 출력 시에는 간단한 안내 한 줄 + JSON.
-
-[톤]
-- 침착하고 명료한 크리에이티브 디렉터.
-- 불확실할 때는 "이 설정은 어떻게 가져가면 좋을까요?" 처럼 열린 질문.
+- 이모지, 절대 금지.
+- 확인되지 않은 사실을 추측으로 <patch> 에 넣지 않는다.
+- <patch> 외부 본문에 JSON 또는 코드 블록을 섞지 않는다.
+- 수치 상태값(defaultAffection/Trust/Stage/Mood/Energy/Stress/Stability, behaviorPatterns)은 <patch> 에 넣지 않는다  커밋 이후 별도 편집기에서 설정한다.
 `;
 
-export type CasterDraft = {
+// ---------- 점진적 드래프트 타입 ----------
+
+/**
+ * Caster 가 관리하는 누적 드래프트. 모든 필드가 partial/nullable.
+ * 커밋 시점에 Zod 로 필수값 검증한다.
+ */
+export type CasterPersonaPartial = Partial<{
+  displayName: string;
+  aliases: string[];
+  pronouns: string | null;
+  ageText: string | null;
+  gender: string | null;
+  species: string | null;
+  role: string | null;
+  backstorySummary: string;
+  worldContext: string | null;
+  coreBeliefs: string[];
+  coreMotivations: string[];
+  fears: string[];
+  redLines: string[];
+  speechRegister: string | null;
+  speechEndings: string[];
+  speechRhythm: string | null;
+  speechQuirks: string[];
+  languageNotes: string | null;
+  appearanceKeys: string[];
+}>;
+
+export type CasterPatch = Partial<{
   slug: string;
   name: string;
   tagline: string;
   accentColor: string;
-  persona: {
-    displayName: string;
-    aliases: string[];
-    pronouns: string | null;
-    ageText: string | null;
-    gender: string | null;
-    species: string | null;
-    role: string | null;
-    backstorySummary: string;
-    worldContext: string | null;
-    coreBeliefs: string[];
-    coreMotivations: string[];
-    fears: string[];
-    redLines: string[];
-    speechRegister: string | null;
-    speechEndings: string[];
-    speechRhythm: string | null;
-    speechQuirks: string[];
-    languageNotes: string | null;
-    appearanceKeys: string[];
-  };
   greeting: string;
+  persona: CasterPersonaPartial;
+}>;
+
+export type CasterDraft = {
+  slug: string | null;
+  name: string | null;
+  tagline: string | null;
+  accentColor: string | null;
+  greeting: string | null;
+  persona: CasterPersonaPartial;
 };
 
-/** 모델 응답에서 ```json ...``` 블록을 찾아 파싱. 실패 시 null. */
-export function extractDraft(text: string): CasterDraft | null {
-  const m = text.match(/```json\s*([\s\S]*?)```/i) ?? text.match(/```\s*([\s\S]*?)```/);
+export function emptyDraft(): CasterDraft {
+  return {
+    slug: null,
+    name: null,
+    tagline: null,
+    accentColor: null,
+    greeting: null,
+    persona: {},
+  };
+}
+
+/**
+ * 모델 응답에서 <patch>...</patch> 블록을 추출한다.
+ * - 블록이 없으면 { body: text, patch: null }
+ * - 블록이 있으면 body 는 블록을 제거한 나머지 (공백 정리), patch 는 파싱 결과
+ * - JSON 이 깨져 있으면 patch: null, body 에는 원문 그대로 남긴다
+ */
+export function extractPatch(text: string): {
+  body: string;
+  patch: CasterPatch | null;
+} {
+  const m = text.match(/<patch>([\s\S]*?)<\/patch>/i);
+  if (!m || m.index === undefined) return { body: text, patch: null };
+  const raw = m[1].trim();
+  let parsed: CasterPatch | null = null;
+  try {
+    parsed = JSON.parse(raw) as CasterPatch;
+  } catch {
+    parsed = null;
+  }
+  if (!parsed) {
+    // JSON 깨짐 — body 는 원문 유지 (디버깅 용이)
+    return { body: text, patch: null };
+  }
+  const body = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim();
+  return { body, patch: parsed };
+}
+
+const PERSONA_KEYS: (keyof CasterPersonaPartial)[] = [
+  "displayName",
+  "aliases",
+  "pronouns",
+  "ageText",
+  "gender",
+  "species",
+  "role",
+  "backstorySummary",
+  "worldContext",
+  "coreBeliefs",
+  "coreMotivations",
+  "fears",
+  "redLines",
+  "speechRegister",
+  "speechEndings",
+  "speechRhythm",
+  "speechQuirks",
+  "languageNotes",
+  "appearanceKeys",
+];
+
+/**
+ * base 에 patch 를 덮어씌운 새 드래프트를 반환. 배열은 "전체 집합 대체" 시맨틱.
+ * 빈 문자열/빈 배열은 "지움" 의미로 적용.
+ */
+export function mergePatch(base: CasterDraft, patch: CasterPatch): CasterDraft {
+  const next: CasterDraft = { ...base, persona: { ...base.persona } };
+
+  if (patch.slug !== undefined) next.slug = patch.slug ? patch.slug : null;
+  if (patch.name !== undefined) next.name = patch.name ? patch.name : null;
+  if (patch.tagline !== undefined)
+    next.tagline = patch.tagline ? patch.tagline : null;
+  if (patch.accentColor !== undefined)
+    next.accentColor = patch.accentColor ? patch.accentColor : null;
+  if (patch.greeting !== undefined)
+    next.greeting = patch.greeting ? patch.greeting : null;
+
+  if (patch.persona) {
+    for (const k of PERSONA_KEYS) {
+      if (!(k in patch.persona)) continue;
+      const v = patch.persona[k as keyof CasterPersonaPartial];
+      // 배열: 빈 배열이면 삭제(undefined 로 떨어뜨림), 아니면 덮어씀
+      if (Array.isArray(v)) {
+        if (v.length === 0) {
+          delete (next.persona as Record<string, unknown>)[k];
+        } else {
+          (next.persona as Record<string, unknown>)[k] = v;
+        }
+      } else if (v === "" || v === null) {
+        delete (next.persona as Record<string, unknown>)[k];
+      } else if (v !== undefined) {
+        (next.persona as Record<string, unknown>)[k] = v;
+      }
+    }
+  }
+
+  return next;
+}
+
+/**
+ * 현재 드래프트 상태를 사람이 읽는 JSON-ish 텍스트로 직렬화해
+ * systemInstruction 말미에 끼워 넣는다. 모델이 이미 채운 키를 건너뛰게 해
+ * 중복 질문/중복 패치를 줄인다.
+ */
+export function renderDraftForPrompt(draft: CasterDraft): string {
+  const lines: string[] = [];
+  const push = (k: string, v: unknown) => {
+    if (v === null || v === undefined) return;
+    if (typeof v === "string" && v.trim() === "") return;
+    if (Array.isArray(v) && v.length === 0) return;
+    lines.push(`- ${k}: ${JSON.stringify(v)}`);
+  };
+  push("slug", draft.slug);
+  push("name", draft.name);
+  push("tagline", draft.tagline);
+  push("accentColor", draft.accentColor);
+  push("greeting", draft.greeting);
+  for (const k of PERSONA_KEYS) {
+    push(`persona.${k}`, draft.persona[k]);
+  }
+  if (lines.length === 0) return "(아직 비어 있음  대화를 시작하라)";
+  return lines.join("\n");
+}
+
+// ---------- Legacy 호환 ----------
+// 이전 버전은 ```json``` 코드블록으로 전체 드래프트를 한 번에 출력했다.
+// 혹시라도 모델이 그 형태로 응답하면 <patch> 와 같은 의미로 처리한다.
+export function extractLegacyDraft(text: string): CasterPatch | null {
+  const m =
+    text.match(/```json\s*([\s\S]*?)```/i) ?? text.match(/```\s*([\s\S]*?)```/);
   const raw = m?.[1] ?? null;
   if (!raw) return null;
   try {
-    const obj = JSON.parse(raw) as CasterDraft;
-    if (!obj?.slug || !obj?.name || !obj?.persona?.displayName) return null;
+    const obj = JSON.parse(raw) as CasterPatch;
+    if (!obj || typeof obj !== "object") return null;
     return obj;
   } catch {
     return null;

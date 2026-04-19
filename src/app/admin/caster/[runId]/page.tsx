@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { TopAppBar } from "@/components/nav/TopAppBar";
-import { CasterConsole } from "./CasterConsole";
+import { CasterConsole, type CasterMessage } from "./CasterConsole";
 
 export const dynamic = "force-dynamic";
 
@@ -28,19 +28,26 @@ export default async function CasterRunPage({
   });
   if (!run) notFound();
 
-  const initialMessages = run.events.map((e) => ({
-    id: e.id,
-    role: e.kind === "user_msg" ? ("user" as const) : ("model" as const),
-    content: (e.payload as { content?: string })?.content ?? "",
-    createdAt: e.createdAt.toISOString(),
-  }));
+  const initialMessages: CasterMessage[] = run.events.map((e) => {
+    const p = (e.payload ?? {}) as {
+      content?: string;
+      body?: string;
+      searchQueries?: string[];
+      sources?: { uri: string; title?: string; domain?: string }[];
+    };
+    return {
+      id: e.id,
+      role: e.kind === "user_msg" ? ("user" as const) : ("model" as const),
+      content: p.body ?? p.content ?? "",
+      searchQueries: p.searchQueries ?? [],
+      sources: p.sources ?? [],
+      createdAt: e.createdAt.toISOString(),
+    };
+  });
 
   return (
     <main className="min-h-dvh bg-surface">
-      <TopAppBar
-        title="Caster"
-        subtitle={`run · ${run.status}`}
-      />
+      <TopAppBar title="Caster" subtitle={`run · ${run.status}`} />
       <CasterConsole
         runId={run.id}
         initialStatus={run.status}

@@ -1,18 +1,54 @@
+// Caster 대화 SSE 엔드포인트.
+//
+// 흐름:
+//   1) user_msg 이벤트 기록
+//   2) 현재 누적 드래프트(run.draftJson) 와 과거 대화를 system/history 로 구성
+//   3) Google 검색 그라운딩을 켠 streamCaster 호출
+//   4) 델타 텍스트 / 검색 쿼리 / 소스 링크를 SSE 로 중계
+//   5) 응답 종료 후 <patch> 추출 → 드래프트 병합 → DB 저장, patch 이벤트로 최종 드래프트 전송
+//
+// SSE 이벤트:
+//   delta           { text }
+//   search          { queries: string[] }
+//   sources         { sources: {uri,title,domain}[] }
+//   patch           { patch, draft }         # 누적된 전체 드래프트
+//   error           { message }
+//   done            { ok }
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/api-utils";
 import { sseStream } from "@/lib/sse";
-import { streamChat, type ChatTurn } from "@/lib/gemini/chat";
 import { MODELS } from "@/lib/gemini/client";
-import { CASTER_SYSTEM, extractDraft } from "@/lib/caster/prompt";
+import {
+  CASTER_SYSTEM,
+  extractPatch,
+  mergePatch,
+  emptyDraft,
+  renderDraftForPrompt,
+  extractLegacyDraft,
+  type CasterDraft,
+} from "@/lib/caster/prompt";
+import {
+  streamCaster,
+  type CasterHistoryTurn,
+  type CasterSource,
+} from "@/lib/caster/stream";
 import { newId } from "@/lib/ids";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const BodySchema = z.object({
   content: z.string().min(1).max(4000),
 });
+
+function normalizeDraft(raw: unknown): CasterDraft {
+  if (!raw || typeof raw !== "object") return emptyDraft();
+  const merged = mergePatch(emptyDraft(), raw as never);
+  return merged;
+}
 
 export async function POST(
   req: Request,
@@ -29,14 +65,14 @@ export async function POST(
 
   const run = await prisma.casterRun.findFirst({
     where: { id, adminUserId: guard.userId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, draftJson: true },
   });
   if (!run) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (run.status === "saved" || run.status === "cancelled") {
     return NextResponse.json({ error: "run_closed" }, { status: 409 });
   }
 
-  // user_msg 이벤트 기록
+  // user_msg 기록
   await prisma.casterEvent.create({
     data: {
       id: newId(),
@@ -46,30 +82,52 @@ export async function POST(
     },
   });
 
-  // 이전 대화 이벤트 → ChatTurn[] 구성
+  // 과거 대화 → ChatTurn[]
   const events = await prisma.casterEvent.findMany({
     where: { runId: run.id, kind: { in: ["user_msg", "model_msg"] } },
     orderBy: { createdAt: "asc" },
     select: { kind: true, payload: true },
   });
 
-  const history: ChatTurn[] = events.map((e) => ({
+  const history: CasterHistoryTurn[] = events.map((e) => ({
     role: e.kind === "user_msg" ? "user" : "model",
-    content: (e.payload as { content?: string })?.content ?? "",
+    content:
+      (e.payload as { content?: string; body?: string })?.body ??
+      (e.payload as { content?: string })?.content ??
+      "",
   }));
+
+  // 누적 드래프트 → systemInstruction 에 주입해 모델이 이미 아는 것은 건너뛰게
+  const currentDraft = normalizeDraft(run.draftJson);
+  const systemInstruction =
+    CASTER_SYSTEM +
+    "\n\n[현재 드래프트]\n" +
+    renderDraftForPrompt(currentDraft);
 
   return sseStream(async (send) => {
     let full = "";
+    const searchQueries: string[] = [];
+    const sourcesAcc: CasterSource[] = [];
+
     try {
-      for await (const delta of streamChat({
+      for await (const ev of streamCaster({
         model: MODELS.chat,
-        systemInstruction: CASTER_SYSTEM,
+        systemInstruction,
         history,
+        enableSearch: true,
         temperature: 0.7,
         maxOutputTokens: 2048,
       })) {
-        full += delta;
-        send("delta", { text: delta });
+        if (ev.type === "text") {
+          full += ev.text;
+          send("delta", { text: ev.text });
+        } else if (ev.type === "search_queries") {
+          searchQueries.push(...ev.queries);
+          send("search", { queries: ev.queries });
+        } else if (ev.type === "sources") {
+          sourcesAcc.push(...ev.sources);
+          send("sources", { sources: ev.sources });
+        }
       }
     } catch (err) {
       send("error", {
@@ -78,27 +136,39 @@ export async function POST(
       return;
     }
 
-    // model_msg 이벤트 기록
+    // <patch> 파싱. 없으면 레거시 ```json``` 한 번 더 시도.
+    const { body, patch: patchBlock } = extractPatch(full);
+    const patch = patchBlock ?? extractLegacyDraft(full);
+    const visibleBody = patchBlock ? body : full; // 레거시 형태면 본문 그대로 저장
+
+    // model_msg 이벤트 — content 에는 유저가 볼 본문을 저장하고,
+    // 원본과 부수 메타(검색 쿼리/소스)는 payload 에 함께 남긴다.
     await prisma.casterEvent.create({
       data: {
         id: newId(),
         runId: run.id,
         kind: "model_msg",
-        payload: { content: full },
+        payload: {
+          body: visibleBody,
+          content: visibleBody, // back-compat
+          fullText: full,
+          searchQueries,
+          sources: sourcesAcc,
+        } as unknown as object,
       },
     });
 
-    // 응답에 드래프트 JSON 이 섞여 있으면 draftJson 갱신 + draft_ready
-    const draft = extractDraft(full);
-    if (draft) {
+    // 드래프트 갱신
+    if (patch) {
+      const nextDraft = mergePatch(currentDraft, patch);
       await prisma.casterRun.update({
         where: { id: run.id },
         data: {
-          draftJson: draft as unknown as object,
+          draftJson: nextDraft as unknown as object,
           status: "draft_ready",
         },
       });
-      send("draft_ready", { draft });
+      send("patch", { patch, draft: nextDraft });
     }
 
     send("done", { ok: true });
