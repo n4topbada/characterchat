@@ -181,6 +181,10 @@ export async function POST(
       }
     };
 
+    let finishReason: string | undefined;
+    let blocked = false;
+    let safetyCategories: string[] | undefined;
+
     try {
       for await (const ev of streamCaster({
         model: MODELS.chat,
@@ -202,21 +206,59 @@ export async function POST(
           // OG 이미지는 비동기로 각자 fetch → 완료 순서대로 emit.
           // 저장은 하지 않는다 (DB 에는 소스 URL 만 남는다).
           startOgFetch(ev.sources);
+        } else if (ev.type === "finish") {
+          finishReason = ev.reason;
+          blocked = !!ev.blocked;
+          safetyCategories = ev.safetyCategories;
         }
       }
     } catch (err) {
+      console.error("[caster] stream error", err);
       send("error", {
         message: err instanceof Error ? err.message : String(err),
       });
       return;
     }
 
-    // <patch> 파싱. 없으면 레거시 ```json``` 한 번 더 시도.
+    // <patch> / <choices> 추출 — 본문은 둘 다 뺀 깨끗한 텍스트.
     const { body: afterPatch, patch: patchBlock } = extractPatch(full);
     const patch = patchBlock ?? extractLegacyDraft(full);
-    const bodyAfterPatch = patchBlock ? afterPatch : full; // 레거시 형태면 본문 그대로
-    // <choices> 도 body 에서 제거해 DB 에 깔끔한 본문만 남긴다.
+    const bodyAfterPatch = patchBlock ? afterPatch : full;
     const { body: visibleBody, choices } = extractChoices(bodyAfterPatch);
+
+    // === 빈 응답 방어 ===
+    // Gemini 가 본문 없이 <patch> 만 뱉었거나 아예 0 바이트로 끝났을 때의 처리.
+    // - 본문이 비었는데 patch 가 있으면 → 중립 본문을 채워 대화를 이어가게 한다.
+    // - 본문도 patch 도 비었으면 → DB 저장 안 하고 error 이벤트로 클라에 알린다.
+    let savedBody = visibleBody;
+    if (!savedBody.trim() && patch) {
+      savedBody = "반영했어. 다음 주제로 넘어가자 — 어디부터 이어갈까?";
+      send("delta", { text: savedBody });
+    }
+
+    const isEmpty = !savedBody.trim() && !patch;
+    console.log("[caster] turn done", {
+      runId: run.id,
+      fullLen: full.length,
+      bodyLen: savedBody.length,
+      hasPatch: !!patch,
+      choicesLen: choices.length,
+      finishReason,
+      blocked,
+      safetyCategories,
+    });
+
+    if (isEmpty) {
+      const hint =
+        blocked && safetyCategories?.length
+          ? `안전 필터로 차단됐어요 (${safetyCategories.join(", ")}). 표현을 바꿔 다시 시도해 주세요.`
+          : blocked
+            ? `응답이 차단됐어요 (${finishReason ?? "unknown"}). 표현을 바꿔 다시 시도해 주세요.`
+            : `응답이 비어 있어요 (finishReason=${finishReason ?? "none"}). 다시 시도해 주세요.`;
+      send("error", { message: hint });
+      send("done", { ok: false });
+      return;
+    }
 
     // model_msg 이벤트 — content 에는 유저가 볼 본문을 저장하고,
     // 원본과 부수 메타(검색 쿼리/소스/선택지)는 payload 에 함께 남긴다.
@@ -226,12 +268,13 @@ export async function POST(
         runId: run.id,
         kind: "model_msg",
         payload: {
-          body: visibleBody,
-          content: visibleBody, // back-compat
+          body: savedBody,
+          content: savedBody, // back-compat
           fullText: full,
           searchQueries,
           sources: sourcesAcc,
           choices,
+          finishReason,
         } as unknown as object,
       },
     });

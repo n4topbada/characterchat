@@ -27,7 +27,13 @@ export type CasterSource = {
 export type CasterStreamEvent =
   | { type: "text"; text: string }
   | { type: "search_queries"; queries: string[] }
-  | { type: "sources"; sources: CasterSource[] };
+  | { type: "sources"; sources: CasterSource[] }
+  | {
+      type: "finish";
+      reason?: string;
+      blocked?: boolean;
+      safetyCategories?: string[];
+    };
 
 type Args = {
   model: string;
@@ -48,13 +54,27 @@ type GroundingMetaLike = {
   groundingChunks?: GroundingChunkLike[];
 };
 
+type SafetyRatingLike = {
+  category?: string;
+  probability?: string;
+  blocked?: boolean;
+};
+
 type CandidateLike = {
   groundingMetadata?: GroundingMetaLike;
+  finishReason?: string;
+  safetyRatings?: SafetyRatingLike[];
+};
+
+type PromptFeedbackLike = {
+  blockReason?: string;
+  safetyRatings?: SafetyRatingLike[];
 };
 
 type StreamChunkLike = {
   text?: string;
   candidates?: CandidateLike[];
+  promptFeedback?: PromptFeedbackLike;
 };
 
 export async function* streamCaster(
@@ -85,13 +105,23 @@ export async function* streamCaster(
   const seenQueries = new Set<string>();
   const seenUris = new Set<string>();
 
+  let lastFinishReason: string | undefined;
+  let lastSafety: SafetyRatingLike[] | undefined;
+  let promptBlockReason: string | undefined;
+
   for await (const raw of resp) {
     const chunk = raw as unknown as StreamChunkLike;
 
     const text = chunk.text;
     if (text) yield { type: "text", text };
 
-    const meta = chunk.candidates?.[0]?.groundingMetadata;
+    const cand = chunk.candidates?.[0];
+    if (cand?.finishReason) lastFinishReason = cand.finishReason;
+    if (cand?.safetyRatings?.length) lastSafety = cand.safetyRatings;
+    if (chunk.promptFeedback?.blockReason)
+      promptBlockReason = chunk.promptFeedback.blockReason;
+
+    const meta = cand?.groundingMetadata;
     if (!meta) continue;
 
     if (meta.webSearchQueries?.length) {
@@ -118,4 +148,23 @@ export async function* streamCaster(
       if (sources.length) yield { type: "sources", sources };
     }
   }
+
+  // 종료 시 finishReason / 프롬프트 차단 / 안전 등급을 모아 한 번 emit.
+  // SAFETY, BLOCKLIST, RECITATION 같은 이유로 텍스트가 0 바이트로 끝날 수 있다.
+  const blocked =
+    promptBlockReason !== undefined ||
+    (lastFinishReason !== undefined &&
+      !["STOP", "MAX_TOKENS", "FINISH_REASON_UNSPECIFIED"].includes(
+        lastFinishReason,
+      ));
+  const safetyCategories = (lastSafety ?? [])
+    .filter((r) => r.blocked || r.probability === "HIGH")
+    .map((r) => r.category ?? "?");
+
+  yield {
+    type: "finish",
+    reason: promptBlockReason ?? lastFinishReason,
+    blocked,
+    safetyCategories: safetyCategories.length ? safetyCategories : undefined,
+  };
 }

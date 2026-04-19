@@ -338,6 +338,13 @@ export function CasterConsole({
               } else if (event === "error") {
                 const { message } = JSON.parse(data) as { message: string };
                 setError(message);
+                // 빈 응답 / 차단 등으로 assistant 본문이 0 바이트면 placeholder
+                // 말풍선을 화면에서 제거한다 (DB 에도 저장 안 됨).
+                setMessages((prev) =>
+                  prev.filter(
+                    (m) => !(m.id === modelId && !m.content.trim()),
+                  ),
+                );
               }
             } catch {
               // ignore frame parse errors
@@ -534,6 +541,22 @@ export function CasterConsole({
 
       {/* === 2) 드로어 + 입력 (하단 고정) === */}
       <div className="shrink-0 border-t border-outline/20 bg-surface-container-lowest">
+        {/* 에러 배너 — 드로어 닫혀 있어도 항상 보임 */}
+        {error ? (
+          <div className="flex items-start gap-2 border-b border-rose-200 bg-rose-50/80 px-3 py-2 text-[11px] text-rose-800">
+            <AlertCircle size={12} className="mt-0.5 shrink-0" />
+            <span className="flex-1 whitespace-pre-wrap">{error}</span>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="shrink-0 text-rose-700/70 hover:text-rose-900"
+              aria-label="에러 닫기"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ) : null}
+
         {/* 드로어 토글 바 */}
         <div className="flex items-center gap-2 px-3 pt-2">
           <button
