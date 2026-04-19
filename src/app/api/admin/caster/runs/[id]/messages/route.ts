@@ -31,6 +31,7 @@ import {
   CASTER_SYSTEM,
   extractPatch,
   extractChoices,
+  stripHallucinatedTags,
   mergePatch,
   emptyDraft,
   renderDraftForPrompt,
@@ -168,6 +169,8 @@ export async function POST(
     const sourcesAcc: CasterSource[] = [];
     const ogPromises: Promise<void>[] = [];
     const seenOgUris = new Set<string>();
+    // OG 이미지 결과를 uri → image URL 로 모아둔다. DB 저장 시 sources 에 병합.
+    const ogImages = new Map<string, string>();
 
     const startOgFetch = (sources: CasterSource[]) => {
       for (const s of sources) {
@@ -175,7 +178,10 @@ export async function POST(
         seenOgUris.add(s.uri);
         ogPromises.push(
           fetchOgImage(s.uri).then((image) => {
-            if (image) send("source_image", { uri: s.uri, image });
+            if (image) {
+              ogImages.set(s.uri, image);
+              send("source_image", { uri: s.uri, image });
+            }
           }),
         );
       }
@@ -224,7 +230,10 @@ export async function POST(
     const { body: afterPatch, patch: patchBlock } = extractPatch(full);
     const patch = patchBlock ?? extractLegacyDraft(full);
     const bodyAfterPatch = patchBlock ? afterPatch : full;
-    const { body: visibleBody, choices } = extractChoices(bodyAfterPatch);
+    const { body: bodyAfterChoices, choices } = extractChoices(bodyAfterPatch);
+    // Caster 가 환각으로 만들어 낸 <image search>, <search>, <tool> 등
+    // 가짜 태그는 UI 를 망치므로 저장 전에 제거.
+    const visibleBody = stripHallucinatedTags(bodyAfterChoices);
 
     // === 빈 응답 방어 ===
     // Gemini 가 본문 없이 <patch> 만 뱉었거나 아예 0 바이트로 끝났을 때의 처리.
@@ -260,6 +269,19 @@ export async function POST(
       return;
     }
 
+    // OG 이미지 fetch 가 얼마나 끝났는지는 Gemini 스트림이 끝난 시점에 따라
+    // 다르다. Gemini 가 먼저 끝났으면 여기서 잠깐 기다려 주면 남은 이미지도
+    // DB 에 포함되고, 거의 끝나 있으면 즉시 통과. (개별 fetch 는 5s 캡)
+    await Promise.allSettled(ogPromises);
+
+    // OG 이미지 URL 을 sources 배열에 병합해 DB 에 저장 — 나중에 이 런을
+    // 다시 열었을 때 썸네일이 재생된다. 이미지 바이트는 여전히 저장 X,
+    // URL 만 남기므로 원본 서버에서 다시 로드된다.
+    const sourcesForDb: CasterSource[] = sourcesAcc.map((s) => {
+      const img = ogImages.get(s.uri);
+      return img ? { ...s, image: img } : s;
+    });
+
     // model_msg 이벤트 — content 에는 유저가 볼 본문을 저장하고,
     // 원본과 부수 메타(검색 쿼리/소스/선택지)는 payload 에 함께 남긴다.
     await prisma.casterEvent.create({
@@ -272,7 +294,7 @@ export async function POST(
           content: savedBody, // back-compat
           fullText: full,
           searchQueries,
-          sources: sourcesAcc,
+          sources: sourcesForDb,
           choices,
           finishReason,
         } as unknown as object,
@@ -295,10 +317,6 @@ export async function POST(
       });
       send("patch", { patch, draft: nextDraft });
     }
-
-    // OG 이미지 fetch 들이 모두 끝난 뒤 done 을 보낸다 (이미지 이벤트가 잘려나가지 않도록).
-    // 개별 fetch 는 이미 5s 타임아웃이 걸려 있으니 무한정 기다리지 않는다.
-    await Promise.allSettled(ogPromises);
 
     send("done", { ok: true });
   });

@@ -33,7 +33,12 @@ export default async function CasterRunPage({
       content?: string;
       body?: string;
       searchQueries?: string[];
-      sources?: { uri: string; title?: string; domain?: string }[];
+      sources?: {
+        uri: string;
+        title?: string;
+        domain?: string;
+        image?: string;
+      }[];
       choices?: string[];
     };
     return {
@@ -41,6 +46,7 @@ export default async function CasterRunPage({
       role: e.kind === "user_msg" ? ("user" as const) : ("model" as const),
       content: p.body ?? p.content ?? "",
       searchQueries: p.searchQueries ?? [],
+      // OG 이미지 URL 도 함께 복구 — 썸네일이 재로드된다.
       sources: p.sources ?? [],
       choices: p.choices ?? [],
       createdAt: e.createdAt.toISOString(),

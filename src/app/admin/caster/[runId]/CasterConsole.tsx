@@ -89,15 +89,26 @@ function sanitizeDraft(raw: unknown): Draft | null {
 }
 
 /**
- * 라이브 표시 클린업 — 첫 <patch 또는 <choices 태그부터 끝까지 숨긴다.
- * 스트리밍 중 덜 닫힌 블록이 보이는 걸 막는다.
+ * 라이브 표시 클린업 — 첫 <patch / <choices / 환각 툴태그부터 끝까지 숨긴다.
+ * 스트리밍 중 덜 닫힌 블록이 보이는 걸 막는다. 저장은 서버에서 별도 strip.
  */
+const LIVE_CUT_PATTERNS: RegExp[] = [
+  /<patch\b/i,
+  /<choices\b/i,
+  /<image[\s_]?search\b/i,
+  /<imagesearch\b/i,
+  /<search(?:_query)?\b/i,
+  /<tool(?:_call)?\b/i,
+  /<function(?:_call)?\b/i,
+  /<web_search\b/i,
+];
+
 function stripMarkup(text: string): string {
   let end = text.length;
-  const m1 = text.search(/<patch\b/i);
-  if (m1 >= 0 && m1 < end) end = m1;
-  const m2 = text.search(/<choices\b/i);
-  if (m2 >= 0 && m2 < end) end = m2;
+  for (const re of LIVE_CUT_PATTERNS) {
+    const m = text.search(re);
+    if (m >= 0 && m < end) end = m;
+  }
   return text.slice(0, end).replace(/\s+$/, "");
 }
 
