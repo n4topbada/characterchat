@@ -71,6 +71,13 @@ const BodySchema = z.object({
       domain: z.string().optional(),
     })
     .nullish(),
+  /**
+   * 에러 배너의 "다시 보내기" 에서 true. 이전 POST 가 중간에 끊겼다는 뜻.
+   * user_msg 이벤트는 이미 DB 에 박혀 있을 수 있으므로, latest event 가
+   * 동일 content 의 user_msg 면 재삽입을 skip 한다 — 안 그러면 대화 기록에
+   * 같은 메시지가 두 번 찍혀서 Gemini 히스토리가 이상해진다.
+   */
+  retry: z.boolean().optional(),
 });
 
 function normalizeDraft(raw: unknown): CasterDraft {
@@ -110,15 +117,40 @@ export async function POST(
       ? coverageMeta.lastAskedAtTurn
       : null;
 
-  // user_msg 기록 (imageRef 는 DB 에 저장하지 않는다 — 텍스트만 남긴다)
-  await prisma.casterEvent.create({
-    data: {
-      id: newId(),
-      runId: run.id,
-      kind: "user_msg",
-      payload: { content: parsed.data.content },
-    },
-  });
+  // user_msg 기록 (imageRef 는 DB 에 저장하지 않는다 — 텍스트만 남긴다).
+  // retry=true 이면 이미 같은 content 의 user_msg 가 바로 전에 박혀 있는지
+  // 확인해서, 있으면 중복 insert 를 skip. 이 가드가 없으면 "503 → 다시보내기"
+  // 한 번 할 때마다 history 에 같은 유저 턴이 쌓인다.
+  if (parsed.data.retry) {
+    const latest = await prisma.casterEvent.findFirst({
+      where: { runId: run.id },
+      orderBy: { createdAt: "desc" },
+      select: { kind: true, payload: true },
+    });
+    const latestContent =
+      (latest?.payload as { content?: string } | null)?.content ?? "";
+    const alreadyLogged =
+      latest?.kind === "user_msg" && latestContent === parsed.data.content;
+    if (!alreadyLogged) {
+      await prisma.casterEvent.create({
+        data: {
+          id: newId(),
+          runId: run.id,
+          kind: "user_msg",
+          payload: { content: parsed.data.content },
+        },
+      });
+    }
+  } else {
+    await prisma.casterEvent.create({
+      data: {
+        id: newId(),
+        runId: run.id,
+        kind: "user_msg",
+        payload: { content: parsed.data.content },
+      },
+    });
+  }
 
   // 과거 대화 → 멀티모달 parts 배열로
   const events = await prisma.casterEvent.findMany({

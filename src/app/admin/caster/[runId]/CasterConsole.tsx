@@ -229,11 +229,19 @@ export function CasterConsole({
 
   /**
    * 실제 전송 로직. text 와 선택적 imageRef/previewImage 를 받는다.
+   *
+   * opts.retry=true 는 "에러 배너의 다시 보내기" 경로. 이 때는
+   *   1) 유저 버블이 이미 화면에 남아 있으므로 **새로 추가하지 않는다**
+   *      (안 그러면 같은 텍스트 버블이 두 개 생긴다)
+   *   2) 실패했던 빈 모델 placeholder 가 혹시 남아 있으면 들어내고
+   *      새 placeholder 하나만 붙인다
+   *   3) 서버에도 retry 플래그를 넘겨서 이전 POST 때 이미 기록된
+   *      user_msg 이벤트를 중복 insert 하지 않도록 한다
    */
   const dispatch = useCallback(
     async (
       text: string,
-      opts?: { imageRef?: ImageRef; previewImage?: string },
+      opts?: { imageRef?: ImageRef; previewImage?: string; retry?: boolean },
     ) => {
       const trimmed = text.trim();
       if (!trimmed || streaming) return;
@@ -246,14 +254,7 @@ export function CasterConsole({
         previewImage: opts?.previewImage,
       };
 
-      const userMsg: CasterMessage = {
-        id: "tmp-u-" + Date.now(),
-        role: "user",
-        content: trimmed,
-        previewImage: opts?.previewImage,
-        createdAt: new Date().toISOString(),
-      };
-      const modelId = "tmp-m-" + (Date.now() + 1);
+      const modelId = "tmp-m-" + Date.now();
       const modelInit: CasterMessage = {
         id: modelId,
         role: "model",
@@ -263,7 +264,27 @@ export function CasterConsole({
         choices: [],
         createdAt: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, userMsg, modelInit]);
+      setMessages((prev) => {
+        if (opts?.retry) {
+          // 유저 버블 재삽입 X. 끝에 혹시 남은 빈 모델 placeholder 들어내고
+          // 새 placeholder 만 붙인다. 부분 응답이 찍혀 있으면(=content 있음)
+          // 그건 보존 — 사용자에게 "아까 여기까지 오다 끊겼다" 흔적을 남김.
+          const last = prev[prev.length - 1];
+          const cleaned =
+            last?.role === "model" && !last.content.trim()
+              ? prev.slice(0, -1)
+              : prev;
+          return [...cleaned, modelInit];
+        }
+        const userMsg: CasterMessage = {
+          id: "tmp-u-" + Date.now(),
+          role: "user",
+          content: trimmed,
+          previewImage: opts?.previewImage,
+          createdAt: new Date().toISOString(),
+        };
+        return [...prev, userMsg, modelInit];
+      });
       setStreaming(true);
 
       try {
@@ -273,10 +294,13 @@ export function CasterConsole({
           body: JSON.stringify({
             content: trimmed,
             imageRef: opts?.imageRef ?? null,
+            retry: opts?.retry ?? false,
           }),
         });
         if (!r.ok || !r.body) {
           setError(`요청 실패 (${r.status})`);
+          // HTTP 에러면 빈 모델 placeholder 를 남겨둬도 UI 쓰레기이므로 청소.
+          setMessages((prev) => prev.filter((m) => m.id !== modelId));
           setStreaming(false);
           return;
         }
@@ -378,6 +402,12 @@ export function CasterConsole({
             }
           }
         }
+      } catch (e) {
+        // 네트워크 단절/AbortError 등 fetch 단계 예외. error 배너로 보여주고
+        // 빈 placeholder 정리. (그러지 않으면 "다시 보내기" 클릭해도 빈
+        // 모델 버블이 두 개 쌓인다.)
+        setError(e instanceof Error ? e.message : String(e));
+        setMessages((prev) => prev.filter((m) => m.id !== modelId));
       } finally {
         setStreaming(false);
       }
@@ -589,9 +619,11 @@ export function CasterConsole({
                 onClick={() => {
                   const last = lastDispatchRef.current;
                   if (!last) return;
+                  // retry=true: 유저 버블 재삽입 금지 + 서버 user_msg 중복 insert 방지.
                   void dispatch(last.text, {
                     imageRef: last.imageRef,
                     previewImage: last.previewImage,
+                    retry: true,
                   });
                 }}
                 className="inline-flex shrink-0 items-center gap-1 rounded-md border border-rose-300 bg-white/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-800 hover:bg-white active:scale-95 transition-transform"
