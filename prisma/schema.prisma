@@ -160,6 +160,12 @@ model PersonaCore {
   languageNotes     String?  @db.Text
   // 외형 단서 — 포트레이트와 별개로 LLM 이 묘사할 때 쓰는 키 포인트
   appearanceKeys    String[] // "회색 눈", "왼쪽 뺨의 흉터" 등
+  // 신체 스펙 — 카드의 프로필 박스에 노출되는 요약 스탯.
+  // 모두 옵션. 인외/판타지 캐릭터는 비워도 된다.
+  heightCm          Int?                 // 키 (cm)
+  weightKg          Int?                 // 몸무게 (kg)
+  threeSize         String?              // "86-58-85" 형식의 B-W-H
+  mbti              String?              // "INFP" 같은 4자리 코드
   // 관계 기본값 — 유저와의 관계가 처음 시작될 때의 상태
   defaultAffection  Int      @default(0)   // -100 ~ +100
   defaultTrust      Int      @default(0)   // -100 ~ +100

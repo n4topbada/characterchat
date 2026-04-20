@@ -1,10 +1,11 @@
 import { notFound, redirect } from "next/navigation";
-import Image from "next/image";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { StartChatButton } from "./StartChatButton";
-import { ArrowLeft, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { SafePortrait } from "@/components/character/SafePortrait";
+import { PhysicalStats } from "@/components/character/PhysicalStats";
 
 export const dynamic = "force-dynamic";
 
@@ -20,30 +21,22 @@ export default async function CharacterLandingPage({
       assets: { orderBy: { order: "asc" } },
       personaCore: {
         select: {
-          role: true,
-          ageText: true,
-          species: true,
-          worldContext: true,
-          backstorySummary: true,
-          coreMotivations: true,
           appearanceKeys: true,
+          backstorySummary: true,
+          heightCm: true,
+          weightKg: true,
+          threeSize: true,
+          mbti: true,
         },
       },
     },
   });
   if (!c || !c.isPublic) notFound();
 
-  const meta = [
-    c.personaCore?.role,
-    c.personaCore?.ageText,
-    c.personaCore?.species,
-  ]
-    .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
-    .join(" · ");
-
-  const appearanceTags = (c.personaCore?.appearanceKeys ?? [])
+  // 카드 태그 칩: appearanceKeys 에서 'ref image:' prefix 같은 내부 라벨 제외.
+  const tags = (c.personaCore?.appearanceKeys ?? [])
     .filter((k) => !/^ref\s+image\s*:/i.test(k))
-    .slice(0, 5);
+    .slice(0, 4);
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -52,10 +45,7 @@ export default async function CharacterLandingPage({
 
   const portraitAsset = c.assets.find((a) => a.kind === "portrait");
   const heroAsset = c.assets.find((a) => a.kind === "hero") ?? portraitAsset;
-  const portrait =
-    portraitAsset?.animationUrl ?? portraitAsset?.blobUrl ?? null;
-  const hero = heroAsset?.animationUrl ?? heroAsset?.blobUrl ?? portrait;
-  const heroIsAnimated = !!(hero && /\/portraits\/ani\//.test(hero));
+  const hero = heroAsset?.animationUrl ?? heroAsset?.blobUrl ?? null;
 
   return (
     <main className="flex-1 min-h-0 bg-surface relative overflow-y-auto">
@@ -77,96 +67,30 @@ export default async function CharacterLandingPage({
               </h1>
             </div>
           </div>
-          <button
-            type="button"
-            aria-label="Settings"
-            className="w-10 h-10 flex items-center justify-center text-primary hover:bg-surface-container-low transition-colors rounded-md"
-          >
-            <SlidersHorizontal size={18} strokeWidth={2} />
-          </button>
         </div>
       </header>
 
-      {/* Hero portrait */}
+      {/* Hero portrait — SafePortrait : local public 은 최적화 우회, onError 시 gradient fallback */}
       <div className="relative h-[58dvh] w-full overflow-hidden z-10 -mt-16 pt-16">
-        {hero ? (
-          <Image
-            src={hero}
-            alt=""
-            fill
-            className="object-cover"
-            priority
-            sizes="100vw"
-            unoptimized={heroIsAnimated}
-          />
-        ) : (
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage:
-                "linear-gradient(135deg, #3a5f94 0%, #a7c8ff 50%, #cee9d9 100%)",
-            }}
-          />
-        )}
-        <div className="absolute inset-0 diagonal-bg opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-surface" />
+        <SafePortrait src={hero} priority sizes="100vw" className="object-cover" />
+        <div className="absolute inset-0 diagonal-bg opacity-40 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-surface pointer-events-none" />
       </div>
 
-      {/* Card */}
+      {/* Card — 슬림 레이아웃: 이름 → 태그 → 한줄 → 소개글 → 신체스탯 → CTA */}
       <section className="-mt-16 relative z-20 px-4">
         <div className="bg-surface-container-lowest rounded-lg shadow-tinted-lg relative overflow-hidden">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
-          <div className="p-7 pl-8">
-            <h2 className="font-headline text-4xl font-bold text-on-surface leading-tight tracking-tight mb-2">
+          <div className="p-7 pl-8 space-y-4">
+            {/* 이름 */}
+            <h2 className="font-headline text-4xl font-bold text-on-surface leading-tight tracking-tight">
               {c.name}
             </h2>
-            {meta && (
-              <p className="label-mono text-primary/70 text-[11px] mb-3 truncate">
-                {meta}
-              </p>
-            )}
-            <p className="text-on-surface text-sm leading-relaxed mb-4 font-medium">
-              {c.tagline}
-            </p>
 
-            {c.personaCore?.backstorySummary && (
-              <p className="text-on-surface-variant text-sm leading-relaxed mb-4">
-                {c.personaCore.backstorySummary}
-              </p>
-            )}
-
-            {c.personaCore?.worldContext && (
-              <div className="mb-5 p-3 bg-surface-container-low border-l-2 border-secondary">
-                <p className="label-mono text-secondary text-[10px] mb-1">
-                  WORLD
-                </p>
-                <p className="text-on-surface-variant text-xs leading-relaxed">
-                  {c.personaCore.worldContext}
-                </p>
-              </div>
-            )}
-
-            {(c.personaCore?.coreMotivations?.length ?? 0) > 0 && (
-              <div className="mb-5">
-                <p className="label-mono text-primary/70 text-[10px] mb-2">
-                  MOTIVATION
-                </p>
-                <ul className="space-y-1">
-                  {c.personaCore!.coreMotivations.slice(0, 3).map((m) => (
-                    <li
-                      key={m}
-                      className="text-on-surface-variant text-xs leading-relaxed pl-3 border-l border-primary/30"
-                    >
-                      {m}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {appearanceTags.length > 0 && (
-              <div className="mb-6 flex flex-wrap gap-2">
-                {appearanceTags.map((t, i) => (
+            {/* 태그 칩 */}
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {tags.map((t, i) => (
                   <span
                     key={t}
                     className={[
@@ -184,7 +108,30 @@ export default async function CharacterLandingPage({
               </div>
             )}
 
-            <div>
+            {/* 한 줄 소개 */}
+            <p className="text-on-surface text-sm leading-relaxed font-medium">
+              {c.tagline}
+            </p>
+
+            {/* 소개글 */}
+            {c.personaCore?.backstorySummary && (
+              <p className="text-on-surface-variant text-sm leading-relaxed">
+                {c.personaCore.backstorySummary}
+              </p>
+            )}
+
+            {/* 신체 스탯 (키/몸무게/쓰리사이즈/MBTI) */}
+            <PhysicalStats
+              stats={{
+                heightCm: c.personaCore?.heightCm,
+                weightKg: c.personaCore?.weightKg,
+                threeSize: c.personaCore?.threeSize,
+                mbti: c.personaCore?.mbti,
+              }}
+            />
+
+            {/* CTA */}
+            <div className="pt-2">
               <StartChatButton characterId={c.id} />
             </div>
           </div>

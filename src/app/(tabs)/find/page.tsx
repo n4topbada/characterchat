@@ -26,12 +26,12 @@ async function loadCharacters(): Promise<CarouselCharacter[]> {
         assets: { where: { kind: "portrait" }, orderBy: { order: "asc" }, take: 1 },
         personaCore: {
           select: {
-            role: true,
-            ageText: true,
-            species: true,
-            worldContext: true,
             backstorySummary: true,
             appearanceKeys: true,
+            heightCm: true,
+            weightKg: true,
+            threeSize: true,
+            mbti: true,
           },
         },
       },
@@ -43,12 +43,12 @@ async function loadCharacters(): Promise<CarouselCharacter[]> {
       tagline: r.tagline,
       accentColor: r.accentColor,
       portraitUrl: r.assets[0]?.animationUrl ?? r.assets[0]?.blobUrl ?? null,
-      role: r.personaCore?.role ?? null,
-      ageText: r.personaCore?.ageText ?? null,
-      species: r.personaCore?.species ?? null,
-      worldContext: r.personaCore?.worldContext ?? null,
       backstorySummary: r.personaCore?.backstorySummary ?? null,
       tags: extractTags(r.personaCore?.appearanceKeys),
+      heightCm: r.personaCore?.heightCm ?? null,
+      weightKg: r.personaCore?.weightKg ?? null,
+      threeSize: r.personaCore?.threeSize ?? null,
+      mbti: r.personaCore?.mbti ?? null,
     }));
   } catch {
     // DB 연결 실패(로컬 .env 미설정 등) — 빈 배열로 우아하게 종료

@@ -18,7 +18,7 @@ export default async function AdminHome() {
 
   return (
     <main className="min-h-dvh bg-surface">
-      <TopAppBar title="관리자" />
+      <TopAppBar title="관리자" backHref="/me" />
       <div className="max-w-md mx-auto px-6 pt-8 space-y-6">
         <section>
           <div className="flex items-center justify-between mb-4 px-2">

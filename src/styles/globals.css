@@ -355,6 +355,37 @@ h3.font-headline {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
+/* 세로 캐러셀 안내 화살표 — 손가락이 화면을 위아래로 쓸어야 함을 힌트한다.
+   아주 옅은 opacity 에서 살짝 밝아졌다 꺼지는 "숨쉬듯" 펄스. */
+@keyframes hint-breathe-down {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.65;
+    transform: translateY(4px);
+  }
+}
+@keyframes hint-breathe-up {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.65;
+    transform: translateY(-4px);
+  }
+}
+.animate-hint-down {
+  animation: hint-breathe-down 2.4s ease-in-out infinite;
+}
+.animate-hint-up {
+  animation: hint-breathe-up 2.4s ease-in-out infinite;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Touch feedback — 호버가 없는 터치 디바이스에서                              */
 /*  모든 버튼/링크/role=button 에 눌림 시각 피드백을 준다.                      */

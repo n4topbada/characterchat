@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
-import Image from "next/image";
 import { ArrowRight, Bookmark } from "lucide-react";
+import { SafePortrait } from "@/components/character/SafePortrait";
+import { PhysicalStats } from "@/components/character/PhysicalStats";
 
 export type CarouselCharacter = {
   slug: string;
@@ -10,25 +11,14 @@ export type CarouselCharacter = {
   accentColor: string;
   portraitUrl: string | null;
   tags?: string[];
-  /** PersonaCore.role — 한 줄 직업/포지션 */
-  role?: string | null;
-  /** PersonaCore.ageText */
-  ageText?: string | null;
-  /** PersonaCore.species — 인간/이종족 등 */
-  species?: string | null;
-  /** PersonaCore.worldContext — 세계 배경 한 줄 */
-  worldContext?: string | null;
   /** PersonaCore.backstorySummary — 원문. 카드에선 짧게 자른다 */
   backstorySummary?: string | null;
+  /** 신체 스펙 — 카드 하단 스탯 박스 */
+  heightCm?: number | null;
+  weightKg?: number | null;
+  threeSize?: string | null;
+  mbti?: string | null;
 };
-
-function composeMeta(c: CarouselCharacter): string | null {
-  const parts = [c.role, c.ageText, c.species].filter(
-    (v): v is string => typeof v === "string" && v.trim().length > 0,
-  );
-  if (parts.length === 0) return null;
-  return parts.join(" · ");
-}
 
 function firstSentence(text: string, max = 120): string {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -39,56 +29,40 @@ function firstSentence(text: string, max = 120): string {
   return clean.slice(0, max - 1) + "…";
 }
 
-const FALLBACK_BG =
-  "linear-gradient(135deg, #3a5f94 0%, #a7c8ff 45%, #cee9d9 100%)";
-
 /**
  * Character card — Scholastic Archive 스타일 풀스크린 카드.
- * - 배경에 포트레이트, 하단에 이름·한 줄 태그라인·태그 칩·CTA.
- * - 이전에 있던 SCHOLAR_NNN / REF_ARCHIVE.V1 같은 내부 식별자 라벨은
- *   유저 사이드로 노출되어 혼란을 주어 제거했다.
+ * 레이아웃 (사용자 요청 슬림):
+ *   이름 → 태그 칩 → 한 줄 소개 → 소개글 → 신체 스탯 (키/몸무게/3-size/MBTI) → CTA
+ *
+ * 이전에 있던 role/age/species 메타 한 줄, WORLD 블록, MOTIVATION 블록은 제거.
  */
 export function CharacterCard({ c }: { c: CarouselCharacter; index: number }) {
   return (
     <section className="h-full w-full snap-start relative flex flex-col px-5 pt-6 pb-6">
-      {/* Portrait frame */}
+      {/* Portrait frame — SafePortrait: local 은 unoptimized, 실패 시 gradient fallback */}
       <div className="absolute inset-0 z-0">
-        {c.portraitUrl ? (
-          <Image
-            src={c.portraitUrl}
-            alt=""
-            fill
-            className="object-cover"
-            priority
-            sizes="(max-width: 768px) 100vw, 480px"
-            // animated webp (portraits/ani/*.webp) 는 Next 최적화가 정지 프레임으로 변환해버려
-            // 애니메이션이 사라진다. URL 패턴으로 판별해 그때만 최적화 우회.
-            unoptimized={/\/portraits\/ani\//.test(c.portraitUrl)}
-          />
-        ) : (
-          <div
-            aria-hidden
-            className="absolute inset-0"
-            style={{ backgroundImage: FALLBACK_BG }}
-          />
-        )}
-        <div className="absolute inset-0 diagonal-bg opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/40 to-transparent" />
+        <SafePortrait
+          src={c.portraitUrl}
+          priority
+          sizes="(max-width: 768px) 100vw, 480px"
+          className="object-cover"
+        />
+        <div className="absolute inset-0 diagonal-bg opacity-40 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/40 to-transparent pointer-events-none" />
       </div>
 
-      {/* Geometric frame decoration (top-right, bottom-left corners) */}
+      {/* Geometric frame decoration */}
       <div className="absolute top-32 right-5 w-16 h-16 border-t-2 border-r-2 border-primary/30 z-10 pointer-events-none" />
       <div className="absolute bottom-40 left-5 w-16 h-16 border-b-2 border-l-2 border-primary/30 z-10 pointer-events-none" />
 
-      {/* Card shell — glass + sharp corners */}
+      {/* Card shell */}
       <div className="mt-auto relative z-10 max-w-md mx-auto w-full">
         <div className="glass-strong ghost-border rounded-lg overflow-hidden shadow-tinted-lg">
-          {/* Accent bar */}
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
 
-          <div className="p-6 pl-7">
-            {/* Name */}
-            <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="p-6 pl-7 space-y-3">
+            {/* 이름 */}
+            <div className="flex items-start justify-between gap-3">
               <h2 className="font-headline text-3xl font-bold text-on-surface leading-tight tracking-tight truncate">
                 {c.name}
               </h2>
@@ -101,35 +75,9 @@ export function CharacterCard({ c }: { c: CarouselCharacter; index: number }) {
               </button>
             </div>
 
-            {/* Meta — role · age · species (있을 때만) */}
-            {composeMeta(c) && (
-              <p className="label-mono text-primary/70 text-[10px] mb-2 truncate">
-                {composeMeta(c)}
-              </p>
-            )}
-
-            {/* Tagline */}
-            <p className="text-on-surface leading-relaxed mb-3 line-clamp-2 text-sm font-medium">
-              {c.tagline}
-            </p>
-
-            {/* Backstory snippet — 있으면 2줄까지 회색 보조 */}
-            {c.backstorySummary && (
-              <p className="text-on-surface-variant leading-relaxed mb-3 line-clamp-2 text-xs">
-                {firstSentence(c.backstorySummary, 140)}
-              </p>
-            )}
-
-            {/* World context — 있으면 1줄 */}
-            {c.worldContext && (
-              <p className="text-on-surface-variant/80 leading-relaxed mb-4 line-clamp-1 text-[11px] italic">
-                {firstSentence(c.worldContext, 90)}
-              </p>
-            )}
-
-            {/* Tag chips — appearanceKeys / 기타 키워드. 샤프 직사각형. */}
+            {/* 태그 칩 — 이름 바로 아래 */}
             {(c.tags?.length ?? 0) > 0 && (
-              <div className="flex flex-wrap gap-2 mb-6">
+              <div className="flex flex-wrap gap-2">
                 {(c.tags ?? []).slice(0, 4).map((t, i) => (
                   <span
                     key={t}
@@ -148,12 +96,37 @@ export function CharacterCard({ c }: { c: CarouselCharacter; index: number }) {
               </div>
             )}
 
-            {/* CTA — parallelogram with 15-degree skew */}
+            {/* 한 줄 소개 */}
+            <p className="text-on-surface leading-relaxed line-clamp-2 text-sm font-medium">
+              {c.tagline}
+            </p>
+
+            {/* 소개글 — 있으면 2줄까지 */}
+            {c.backstorySummary && (
+              <p className="text-on-surface-variant leading-relaxed line-clamp-2 text-xs">
+                {firstSentence(c.backstorySummary, 140)}
+              </p>
+            )}
+
+            {/* 신체 스탯 */}
+            <PhysicalStats
+              stats={{
+                heightCm: c.heightCm,
+                weightKg: c.weightKg,
+                threeSize: c.threeSize,
+                mbti: c.mbti,
+              }}
+            />
+
+            {/* CTA — parallelogram */}
             <Link
               href={`/characters/${c.slug}`}
-              className="relative group flex items-center justify-center overflow-hidden h-14 active:scale-[0.98] transition-transform"
+              className="relative group flex items-center justify-center overflow-hidden h-14 active:scale-[0.98] transition-transform mt-2"
             >
-              <div className="absolute inset-0 btn-cta-gradient group-hover:brightness-110 transition-all" style={{ transform: "skewX(-12deg)" }} />
+              <div
+                className="absolute inset-0 btn-cta-gradient group-hover:brightness-110 transition-all"
+                style={{ transform: "skewX(-12deg)" }}
+              />
               <div className="relative flex items-center gap-3 text-on-primary font-headline font-bold tracking-[0.2em] text-sm">
                 <span>대화 시작</span>
                 <ArrowRight size={16} strokeWidth={2.5} />

@@ -2,13 +2,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Search, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import { MessageBubble, type ChatMessage } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { Composer } from "./Composer";
 import { StatusPanel } from "./StatusPanel";
 import { RoomBackdrop } from "./RoomBackdrop";
+import { SettingsMenuButton } from "./SettingsMenuButton";
 import { extractStatus } from "@/lib/narration";
+import { shouldBypassImageOptimizer } from "@/lib/assets/imageHint";
 
 const IMG_TAG_RE_CLIENT = /<img\s+[^>]*tags\s*=\s*"[^"]+"[^>]*\/?>/gi;
 function stripImageTagsClient(s: string): string {
@@ -208,25 +210,25 @@ export function ChatShell({
               <ArrowLeft size={18} strokeWidth={2} />
             </Link>
             <div className="relative w-9 h-9 overflow-hidden bg-primary-container rounded-md border-2 border-primary-container shrink-0">
+              {/* gradient always-on — broken-image 이미지모지 고착 방지 */}
+              <div
+                aria-hidden
+                className="absolute inset-0"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(135deg, #3a5f94, #cee9d9)",
+                }}
+              />
               {character.portraitUrl ? (
                 <Image
                   src={character.portraitUrl}
                   alt=""
                   width={36}
                   height={36}
-                  className="w-full h-full object-cover"
-                  unoptimized={/\/portraits\/ani\//.test(character.portraitUrl)}
+                  className="relative w-full h-full object-cover"
+                  unoptimized={shouldBypassImageOptimizer(character.portraitUrl)}
                 />
-              ) : (
-                <div
-                  aria-hidden
-                  className="w-full h-full"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(135deg, #3a5f94, #cee9d9)",
-                  }}
-                />
-              )}
+              ) : null}
             </div>
             <div className="flex flex-col min-w-0">
               <h1 className="font-headline font-black tracking-[0.15em] text-on-surface uppercase text-xs truncate">
@@ -246,13 +248,10 @@ export function ChatShell({
             >
               <Search size={16} strokeWidth={2} />
             </button>
-            <button
-              type="button"
-              aria-label="Settings"
-              className="w-9 h-9 flex items-center justify-center text-primary hover:bg-surface-container-low transition-colors rounded-md"
-            >
-              <SlidersHorizontal size={16} strokeWidth={2} />
-            </button>
+            <SettingsMenuButton
+              sessionId={sessionId}
+              characterName={character.name}
+            />
           </div>
         </div>
       </header>
