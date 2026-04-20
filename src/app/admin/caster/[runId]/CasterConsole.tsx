@@ -26,6 +26,7 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  RotateCw,
 } from "lucide-react";
 import {
   CharacterSheet,
@@ -197,6 +198,14 @@ export function CasterConsole({
   );
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 업스트림 혼잡/에러 시 "같은 입력을 다시 보내기" 를 할 수 있도록 마지막
+  // dispatch 파라미터를 ref 로 보관. (state 로 두면 에러 배너가 매 streaming
+  // 상태 변화마다 재렌더 되므로 ref 로 충분하다.)
+  const lastDispatchRef = useRef<{
+    text: string;
+    imageRef?: ImageRef;
+    previewImage?: string;
+  } | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -230,6 +239,12 @@ export function CasterConsole({
       if (!trimmed || streaming) return;
       setError(null);
       setValidationIssues([]);
+      // 재전송 버튼이 꺼낼 수 있도록 최신 입력을 ref 에 박제.
+      lastDispatchRef.current = {
+        text: trimmed,
+        imageRef: opts?.imageRef,
+        previewImage: opts?.previewImage,
+      };
 
       const userMsg: CasterMessage = {
         id: "tmp-u-" + Date.now(),
@@ -561,11 +576,31 @@ export function CasterConsole({
 
       {/* === 2) 드로어 + 입력 (하단 고정) === */}
       <div className="shrink-0 border-t border-outline/20 bg-surface-container-lowest">
-        {/* 에러 배너 — 드로어 닫혀 있어도 항상 보임 */}
+        {/* 에러 배너 — 드로어 닫혀 있어도 항상 보임.
+            업스트림 혼잡으로 실패했을 때는 마지막 입력을 보관해 뒀다가 "다시 보내기"
+            버튼으로 같은 내용을 한 번의 클릭으로 재전송한다. */}
         {error ? (
           <div className="flex items-start gap-2 border-b border-rose-200 bg-rose-50/80 px-3 py-2 text-[11px] text-rose-800">
             <AlertCircle size={12} className="mt-0.5 shrink-0" />
             <span className="flex-1 whitespace-pre-wrap">{error}</span>
+            {lastDispatchRef.current && !streaming ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const last = lastDispatchRef.current;
+                  if (!last) return;
+                  void dispatch(last.text, {
+                    imageRef: last.imageRef,
+                    previewImage: last.previewImage,
+                  });
+                }}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-rose-300 bg-white/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-800 hover:bg-white active:scale-95 transition-transform"
+                aria-label="마지막 메시지 다시 보내기"
+              >
+                <RotateCw size={10} strokeWidth={2.5} />
+                <span>다시 보내기</span>
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setError(null)}

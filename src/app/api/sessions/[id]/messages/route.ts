@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth, errorJson } from "@/lib/api-utils";
 import { newId } from "@/lib/ids";
 import { buildSystemInstruction, streamChat } from "@/lib/gemini/chat";
+import { classifyUpstreamError } from "@/lib/gemini/client";
 import { sseStream } from "@/lib/sse";
 import { retrieveForPrompt } from "@/lib/rag/retrieve";
 import { extractStatus } from "@/lib/narration";
@@ -401,14 +402,15 @@ export async function POST(
 
       send("done", { id: messageId });
     } catch (err) {
+      // 업스트림(Gemini) 에러를 사용자 친화적 메시지로 분류.
+      // status/kind 는 서버 로그에만 남기고, 사용자에게는 상태 코드 포함된
+      // 한글 문장만 내려간다 ("모델 서버가 잠시 혼잡해요 (503)" 같은 식).
+      const classified = classifyUpstreamError(err);
       const raw = err instanceof Error ? err.message : String(err);
-      // 업스트림(Gemini) 이 혼잡하면 친화적 메시지로 바꿔 전달.
-      const isUpstreamBusy = /5\d\d|overload|unavailable|503|fetch failed/i.test(raw);
-      const message = isUpstreamBusy
-        ? "모델 서버가 잠시 혼잡해요. 잠깐 뒤에 다시 시도해 주세요."
-        : raw || "stream_failed";
-      console.error(`[chat] stream failed: ${raw}`);
-      send("error", { message });
+      console.error(
+        `[chat] stream failed kind=${classified.kind} status=${classified.status ?? "?"} raw="${raw.slice(0, 200)}"`,
+      );
+      send("error", { message: classified.message, kind: classified.kind });
     }
   });
 }

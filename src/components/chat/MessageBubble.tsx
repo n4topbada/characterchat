@@ -13,6 +13,11 @@ export type ChatMessage = {
    *  UI: 에러 버블 + "다시보내기" 아이콘 노출. onRetry 를 통해 같은 유저
    *  메시지를 재전송한다. */
   failed?: boolean;
+  /** 서버가 보낸 분류된 에러 메시지 (예: "모델 서버가 잠시 혼잡해요 (503)...").
+   *  failed === true 일 때만 의미가 있고, 없으면 정적 폴백 문구를 쓴다.
+   *  사용자가 "정말 503 이 나온 거 맞아?" 처럼 원인을 궁금해할 때 답이 되도록
+   *  실제 상태 코드가 들어간 문장을 그대로 노출한다. */
+  errorText?: string;
 };
 
 function formatTimestamp(v?: string | Date): string {
@@ -85,8 +90,9 @@ export function MessageBubble({
           <span className="label-mono text-error">FAILED</span>
         </div>
         <div className="relative bubble-receive bg-error-container/40 border-l-2 border-error px-4 py-3 shadow-tinted-sm">
-          <p className="text-[13px] leading-relaxed text-on-error-container">
-            응답을 받지 못했어요. 서버가 혼잡하거나 일시적으로 응답이 차단된 상황입니다.
+          <p className="text-[13px] leading-relaxed text-on-error-container whitespace-pre-wrap">
+            {msg.errorText ??
+              "응답을 받지 못했어요. 서버가 혼잡하거나 일시적으로 응답이 차단된 상황입니다."}
           </p>
           {onRetry ? (
             <button

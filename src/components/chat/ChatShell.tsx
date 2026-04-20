@@ -99,11 +99,11 @@ export function ChatShell({
       // 실패 시 표시할 모델 메시지 ID. retry 면 기존 lastModelId 를, 아니면 새 modelId.
       const targetModelId = lastModelId;
 
-      const markFailed = () => {
+      const markFailed = (errorText?: string) => {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === targetModelId
-              ? { ...m, content: "(RESPONSE_ERROR)", failed: true }
+              ? { ...m, content: "(RESPONSE_ERROR)", failed: true, errorText }
               : m,
           ),
         );
@@ -116,7 +116,9 @@ export function ChatShell({
           body: JSON.stringify({ content: text }),
         });
         if (!r.ok || !r.body) {
-          markFailed();
+          // SSE 가 시작되기도 전에 HTTP 자체가 깨진 케이스 (auth, 세션 없음, 500 등).
+          // 정확한 상태코드를 보여줘야 "왜 실패했는지" 가 드러난다.
+          markFailed(`요청이 실패했어요 (HTTP ${r.status}).`);
           setStreaming(false);
           return;
         }
@@ -203,11 +205,26 @@ export function ChatShell({
               );
             } else if (event === "error") {
               // 서버가 error 이벤트로 종료 — failed 플래그를 세워서 에러 버블 +
-              // 재전송 버튼이 뜨도록. MessageBubble.failed 가 렌더 분기를 처리한다.
+              // 재전송 버튼이 뜨도록. 서버가 보낸 실제 메시지 (예: "모델 서버가
+              // 잠시 혼잡해요 (503)...") 를 errorText 로 저장해 MessageBubble 이
+              // 그걸 그대로 보여주도록 한다. 이전엔 "(RESPONSE_ERROR)" 만 남아서
+              // 사용자는 실제 에러 원인이 무엇인지 알 수 없었다.
+              let errorText: string | undefined;
+              try {
+                const parsed = JSON.parse(data) as { message?: string };
+                errorText = parsed.message;
+              } catch {
+                // message 가 없거나 파싱 실패 — 폴백 문구로.
+              }
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === targetModelId
-                    ? { ...m, content: "(RESPONSE_ERROR)", failed: true }
+                    ? {
+                        ...m,
+                        content: "(RESPONSE_ERROR)",
+                        failed: true,
+                        errorText,
+                      }
                     : m
                 )
               );

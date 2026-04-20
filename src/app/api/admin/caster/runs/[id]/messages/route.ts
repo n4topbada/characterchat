@@ -26,7 +26,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/api-utils";
 import { sseStream } from "@/lib/sse";
-import { MODELS } from "@/lib/gemini/client";
+import { MODELS, classifyUpstreamError } from "@/lib/gemini/client";
 import {
   CASTER_SYSTEM,
   extractPatch,
@@ -244,14 +244,14 @@ export async function POST(
         }
       }
     } catch (err) {
-      console.error("[caster] stream error", err);
+      // 업스트림(Gemini) 에러 분류 — 상태 코드까지 메시지에 포함해 UI 에 보낸다.
+      const classified = classifyUpstreamError(err);
       const raw = err instanceof Error ? err.message : String(err);
-      const isUpstreamBusy = /5\d\d|overload|unavailable|503|fetch failed/i.test(raw);
-      send("error", {
-        message: isUpstreamBusy
-          ? "모델 서버가 잠시 혼잡해요. 잠깐 뒤에 다시 시도해 주세요."
-          : raw,
-      });
+      console.error(
+        `[caster] stream error kind=${classified.kind} status=${classified.status ?? "?"} raw="${raw.slice(0, 200)}"`,
+        err,
+      );
+      send("error", { message: classified.message, kind: classified.kind });
       return;
     }
 
