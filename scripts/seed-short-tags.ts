@@ -13,6 +13,7 @@ const BY_SLUG: Record<string, string[]> = {
   jun: ["포차 주인", "중년", "ISFP"],
   yura: ["AI 연구원", "야간조", "INTJ"],
   aria: ["견습 마법사", "학생", "INFP"],
+  "han-yo-il": ["도서실", "고등학생", "츤데레", "친구"],
 };
 
 (async () => {
