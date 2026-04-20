@@ -160,6 +160,10 @@ model PersonaCore {
   languageNotes     String?  @db.Text
   // 외형 단서 — 포트레이트와 별개로 LLM 이 묘사할 때 쓰는 키 포인트
   appearanceKeys    String[] // "회색 눈", "왼쪽 뺨의 흉터" 등
+  // 카드 상단 "단어형" 짧은 태그 — 한 줄로 쓸 수 있는 2~5개 단어.
+  // appearanceKeys 는 서술형(긴 표현) 이라 카드 칩으로 쓰기엔 길다.
+  // 비어 있으면 role 의 마지막 토큰 + MBTI 로 derive (loadCharacters 참조).
+  shortTags         String[] @default([])
   // 신체 스펙 — 카드의 프로필 박스에 노출되는 요약 스탯.
   // 모두 옵션. 인외/판타지 캐릭터는 비워도 된다.
   heightCm          Int?                 // 키 (cm)

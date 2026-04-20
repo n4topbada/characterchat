@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { TopAppBar } from "@/components/nav/TopAppBar";
 import Link from "next/link";
+import { Wand2 } from "lucide-react";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -25,11 +26,20 @@ export default async function AdminHome() {
             <h2 className="font-headline text-lg font-bold text-on-surface">
               캐릭터 ({characters.length})
             </h2>
+            {/* Caster 열기 — 카드 CTA 와 동일한 skew-parallelogram 아이콘블록 */}
             <Link
               href={{ pathname: "/admin/caster" }}
-              className="text-primary font-bold text-sm"
+              className="relative group inline-flex items-center overflow-hidden active:scale-[0.98] transition-transform"
+              aria-label="Caster 열기"
             >
-              Caster 열기
+              <div
+                className="absolute inset-0 bg-primary group-hover:brightness-110 transition-all"
+                style={{ transform: "skewX(-12deg)" }}
+              />
+              <div className="relative flex items-center gap-1.5 px-3 py-1.5 text-on-primary font-headline font-bold tracking-[0.15em] uppercase text-[11px]">
+                <Wand2 size={14} strokeWidth={2.5} />
+                <span>Caster</span>
+              </div>
             </Link>
           </div>
           <div className="space-y-3">
@@ -47,12 +57,13 @@ export default async function AdminHome() {
                       /{c.slug} · {c.tagline}
                     </p>
                   </div>
+                  {/* 상태 칩 — 카드 태그와 동일 규약: 샤프 사각 + border. rounded-full pill 제거. */}
                   <span
                     className={[
-                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase",
+                      "shrink-0 px-2 py-0.5 rounded-sm text-[10px] font-bold uppercase tracking-wider border",
                       c.isPublic
-                        ? "bg-secondary-container text-on-secondary-container"
-                        : "bg-surface-container-high text-on-surface-variant",
+                        ? "border-primary/40 text-primary bg-primary/10"
+                        : "border-outline-variant/50 text-on-surface-variant bg-surface-container-low",
                     ].join(" ")}
                   >
                     {c.isPublic ? "Public" : "Draft"}

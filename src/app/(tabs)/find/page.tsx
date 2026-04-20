@@ -1,22 +1,9 @@
 import { prisma } from "@/lib/db";
 import { VerticalCarousel } from "@/components/carousel/VerticalCarousel";
 import type { CarouselCharacter } from "@/components/carousel/CharacterCard";
+import { deriveShortTags } from "@/lib/character-display";
 
 export const dynamic = "force-dynamic";
-
-/**
- * appearanceKeys 에서 태그용 키워드 뽑기.
- * - "ref image: https://…" 같은 URL 앵커 토큰은 제외
- * - 너무 긴 항목(> 24자) 은 축약
- * - 최대 4개
- */
-function extractTags(appearanceKeys: string[] | null | undefined): string[] {
-  if (!appearanceKeys?.length) return [];
-  return appearanceKeys
-    .filter((k) => !/^ref\s+image\s*:/i.test(k))
-    .map((k) => (k.length > 24 ? k.slice(0, 22) + "…" : k))
-    .slice(0, 4);
-}
 
 async function loadCharacters(): Promise<CarouselCharacter[]> {
   try {
@@ -27,7 +14,10 @@ async function loadCharacters(): Promise<CarouselCharacter[]> {
         personaCore: {
           select: {
             backstorySummary: true,
-            appearanceKeys: true,
+            shortTags: true,
+            role: true,
+            species: true,
+            ageText: true,
             heightCm: true,
             weightKg: true,
             threeSize: true,
@@ -37,19 +27,31 @@ async function loadCharacters(): Promise<CarouselCharacter[]> {
       },
       orderBy: { createdAt: "desc" },
     });
-    return rows.map((r) => ({
-      slug: r.slug,
-      name: r.name,
-      tagline: r.tagline,
-      accentColor: r.accentColor,
-      portraitUrl: r.assets[0]?.animationUrl ?? r.assets[0]?.blobUrl ?? null,
-      backstorySummary: r.personaCore?.backstorySummary ?? null,
-      tags: extractTags(r.personaCore?.appearanceKeys),
-      heightCm: r.personaCore?.heightCm ?? null,
-      weightKg: r.personaCore?.weightKg ?? null,
-      threeSize: r.personaCore?.threeSize ?? null,
-      mbti: r.personaCore?.mbti ?? null,
-    }));
+    return rows.map((r) => {
+      const core = r.personaCore;
+      const tags =
+        core?.shortTags && core.shortTags.length > 0
+          ? core.shortTags
+          : deriveShortTags({
+              role: core?.role,
+              species: core?.species,
+              mbti: core?.mbti,
+            });
+      return {
+        slug: r.slug,
+        name: r.name,
+        tagline: r.tagline,
+        accentColor: r.accentColor,
+        portraitUrl: r.assets[0]?.animationUrl ?? r.assets[0]?.blobUrl ?? null,
+        backstorySummary: core?.backstorySummary ?? null,
+        tags,
+        ageText: core?.ageText ?? null,
+        heightCm: core?.heightCm ?? null,
+        weightKg: core?.weightKg ?? null,
+        threeSize: core?.threeSize ?? null,
+        mbti: core?.mbti ?? null,
+      };
+    });
   } catch {
     // DB 연결 실패(로컬 .env 미설정 등) — 빈 배열로 우아하게 종료
     return [];

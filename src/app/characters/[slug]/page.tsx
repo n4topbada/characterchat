@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { SafePortrait } from "@/components/character/SafePortrait";
 import { PhysicalStats } from "@/components/character/PhysicalStats";
+import { mergeIntro, deriveShortTags } from "@/lib/character-display";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,11 @@ export default async function CharacterLandingPage({
       assets: { orderBy: { order: "asc" } },
       personaCore: {
         select: {
-          appearanceKeys: true,
+          shortTags: true,
+          role: true,
+          species: true,
           backstorySummary: true,
+          ageText: true,
           heightCm: true,
           weightKg: true,
           threeSize: true,
@@ -33,10 +37,18 @@ export default async function CharacterLandingPage({
   });
   if (!c || !c.isPublic) notFound();
 
-  // 카드 태그 칩: appearanceKeys 에서 'ref image:' prefix 같은 내부 라벨 제외.
-  const tags = (c.personaCore?.appearanceKeys ?? [])
-    .filter((k) => !/^ref\s+image\s*:/i.test(k))
-    .slice(0, 4);
+  // 카드와 동일 규약: shortTags 우선, 비어 있으면 role 마지막 토큰 + species + MBTI 로 derive.
+  const tags =
+    c.personaCore?.shortTags && c.personaCore.shortTags.length > 0
+      ? c.personaCore.shortTags.slice(0, 6)
+      : deriveShortTags({
+          role: c.personaCore?.role,
+          species: c.personaCore?.species,
+          mbti: c.personaCore?.mbti,
+        }).slice(0, 6);
+
+  // tagline + backstory 를 단일 intro 로 통합.
+  const intro = mergeIntro(c.tagline, c.personaCore?.backstorySummary);
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -77,52 +89,39 @@ export default async function CharacterLandingPage({
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-surface pointer-events-none" />
       </div>
 
-      {/* Card — 슬림 레이아웃: 이름 → 태그 → 한줄 → 소개글 → 신체스탯 → CTA */}
+      {/* Card — 슬림 레이아웃: 이름 → (1줄) 단어형 태그 → 통합 intro → 신체 스탯 → CTA */}
       <section className="-mt-16 relative z-20 px-4">
         <div className="bg-surface-container-lowest rounded-lg shadow-tinted-lg relative overflow-hidden">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
-          <div className="p-7 pl-8 space-y-4">
+          <div className="p-7 pl-8 space-y-3">
             {/* 이름 */}
             <h2 className="font-headline text-4xl font-bold text-on-surface leading-tight tracking-tight">
               {c.name}
             </h2>
 
-            {/* 태그 칩 */}
+            {/* 단어형 태그 칩 — 1줄, 통일 스타일 (카드와 동일 규약). 길이 넘치면 가로 스크롤. */}
             {tags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {tags.map((t, i) => (
-                  <span
-                    key={t}
-                    className={[
-                      "px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-sm truncate max-w-[14rem]",
-                      i % 3 === 0
-                        ? "bg-tertiary-container text-on-tertiary-container"
-                        : i % 3 === 1
-                          ? "bg-secondary-container text-on-secondary-container"
-                          : "bg-surface-container-high text-on-surface-variant",
-                    ].join(" ")}
-                  >
-                    {t}
-                  </span>
-                ))}
+              <div className="-mx-1 overflow-x-auto">
+                <ul className="flex items-center gap-1.5 px-1 whitespace-nowrap">
+                  {tags.map((t) => (
+                    <li
+                      key={t}
+                      className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-sm border border-outline-variant/50 text-on-surface-variant bg-surface-container-low"
+                    >
+                      {t}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
-            {/* 한 줄 소개 */}
-            <p className="text-on-surface text-sm leading-relaxed font-medium">
-              {c.tagline}
-            </p>
+            {/* 통합 intro — tagline + backstory 합본. 디테일 페이지는 clamp 없이 전체 노출. */}
+            <p className="text-on-surface text-sm leading-relaxed">{intro}</p>
 
-            {/* 소개글 */}
-            {c.personaCore?.backstorySummary && (
-              <p className="text-on-surface-variant text-sm leading-relaxed">
-                {c.personaCore.backstorySummary}
-              </p>
-            )}
-
-            {/* 신체 스탯 (키/몸무게/쓰리사이즈/MBTI) */}
+            {/* 신체 스탯 (나이/키/몸무게/쓰리사이즈/MBTI) — 슬림 1줄 */}
             <PhysicalStats
               stats={{
+                ageText: c.personaCore?.ageText,
                 heightCm: c.personaCore?.heightCm,
                 weightKg: c.personaCore?.weightKg,
                 threeSize: c.personaCore?.threeSize,
