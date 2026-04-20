@@ -39,32 +39,75 @@ export function ChatShell({
   const [backgroundUrl, setBackgroundUrl] = useState<string | null>(
     initialBackgroundUrl,
   );
+  // 실패한 모델 메시지가 재전송을 요구할 때 참조하기 위한 "마지막으로 사용자가 보낸
+  // 원본 텍스트". 모델 응답 에러 후 사용자가 retry 버튼을 누르면 이 값을 그대로
+  // send() 에 다시 넣는다. ref 라 setState 리렌더 없이 쓴다.
+  const lastUserTextRef = useRef<string>("");
+  // send() 는 useCallback([sessionId]) 로 메모이즈되어 있어 messages 를 직접 참조하면
+  // stale closure. retry 모드에서 "마지막 model 메시지 ID" 를 찾아야 하므로, messages
+  // 최신 스냅샷을 ref 로 유지해 send() 안에서 꺼낸다.
+  const messagesRef = useRef<ChatMessage[]>(initialMessages);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    messagesRef.current = messages;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streaming]);
 
   const send = useCallback(
-    async (text: string) => {
-      const userMsg: ChatMessage = {
-        id: "tmp-u-" + Date.now(),
-        role: "user",
-        content: text,
-        createdAt: new Date().toISOString(),
-      };
-      const modelId = "tmp-m-" + Date.now();
-      setMessages((prev) => [
-        ...prev,
-        userMsg,
-        {
-          id: modelId,
-          role: "model",
-          content: "",
+    async (text: string, opts?: { retry?: boolean }) => {
+      lastUserTextRef.current = text;
+      const now = Date.now();
+      const modelId = "tmp-m-" + now;
+
+      // 재전송 모드: 기존 실패한 마지막 model 메시지를 같은 ID 로 리셋해서
+      // "실패 → 재시도 중" 가 자연스럽게 이어지도록 한다. 유저 메시지는
+      // 추가하지 않음 (이미 위에 그대로 남아있음).
+      // messagesRef 를 써서 stale closure 를 회피.
+      const lastModelId = opts?.retry
+        ? ([...messagesRef.current].reverse().find((m) => m.role === "model")?.id ?? modelId)
+        : modelId;
+      if (opts?.retry) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === lastModelId
+              ? { ...m, content: "", failed: false }
+              : m,
+          ),
+        );
+      } else {
+        // 일반 전송: user + 빈 model placeholder 를 append.
+        const userMsg: ChatMessage = {
+          id: "tmp-u-" + now,
+          role: "user",
+          content: text,
           createdAt: new Date().toISOString(),
-        },
-      ]);
+        };
+        setMessages((prev) => [
+          ...prev,
+          userMsg,
+          {
+            id: modelId,
+            role: "model",
+            content: "",
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+      }
       setStreaming(true);
+
+      // 실패 시 표시할 모델 메시지 ID. retry 면 기존 lastModelId 를, 아니면 새 modelId.
+      const targetModelId = lastModelId;
+
+      const markFailed = () => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === targetModelId
+              ? { ...m, content: "(RESPONSE_ERROR)", failed: true }
+              : m,
+          ),
+        );
+      };
 
       try {
         const r = await fetch(`/api/sessions/${sessionId}/messages`, {
@@ -73,6 +116,7 @@ export function ChatShell({
           body: JSON.stringify({ content: text }),
         });
         if (!r.ok || !r.body) {
+          markFailed();
           setStreaming(false);
           return;
         }
@@ -99,7 +143,7 @@ export function ChatShell({
                 const { text: t } = JSON.parse(data) as { text: string };
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === modelId ? { ...m, content: m.content + t } : m
+                    m.id === targetModelId ? { ...m, content: m.content + t } : m
                   )
                 );
               } catch {
@@ -119,7 +163,7 @@ export function ChatShell({
                 };
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === modelId
+                    m.id === targetModelId
                       ? {
                           ...m,
                           content: stripImageTagsClient(m.content),
@@ -145,7 +189,7 @@ export function ChatShell({
               // accumulated buffer (서버 저장본은 이미 stripped, 클라 중간 버퍼는 남을 수 있음).
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === modelId
+                  m.id === targetModelId
                     ? { ...m, content: stripImageTagsClient(m.content) }
                     : m
                 )
@@ -154,14 +198,16 @@ export function ChatShell({
               // 서버가 빈 응답/블록 감지 후 재시도 — 지금까지의 delta 버퍼를 리셋.
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === modelId ? { ...m, content: "" } : m
+                  m.id === targetModelId ? { ...m, content: "" } : m
                 )
               );
             } else if (event === "error") {
+              // 서버가 error 이벤트로 종료 — failed 플래그를 세워서 에러 버블 +
+              // 재전송 버튼이 뜨도록. MessageBubble.failed 가 렌더 분기를 처리한다.
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === modelId
-                    ? { ...m, content: "(RESPONSE_ERROR)" }
+                  m.id === targetModelId
+                    ? { ...m, content: "(RESPONSE_ERROR)", failed: true }
                     : m
                 )
               );
@@ -267,6 +313,15 @@ export function ChatShell({
               key={m.id}
               msg={m}
               senderLabel={character.name || senderCode}
+              onRetry={
+                m.failed
+                  ? () => {
+                      // 마지막으로 사용자가 보낸 원문 텍스트를 그대로 재전송.
+                      // retry 플래그를 켜서 새 버블을 만들지 않고 기존 실패 버블을 복구.
+                      void send(lastUserTextRef.current, { retry: true });
+                    }
+                  : undefined
+              }
             />
           )
         )}

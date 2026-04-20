@@ -14,7 +14,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   Send,
   CheckCircle2,
@@ -27,14 +26,13 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  Plus,
-  Sparkles,
 } from "lucide-react";
 import {
   CharacterSheet,
   computeCompletion,
   type SheetDraft,
 } from "./CharacterSheet";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
 
 export type CasterSource = {
   uri: string;
@@ -42,16 +40,6 @@ export type CasterSource = {
   domain?: string;
   /** 초안 전용 OG 이미지 URL — source_image SSE 이벤트로 덧붙는다. DB 에 저장 X. */
   image?: string;
-};
-
-/** 하단 초안 스트립에 표시되는 한 개 슬롯 요약. */
-export type DraftSlot = {
-  id: string;
-  status: string;
-  startedAt: string;
-  savedCharacterId: string | null;
-  draftName: string | null;
-  tagline: string | null;
 };
 
 type ImageRef = {
@@ -82,8 +70,6 @@ type Props = {
   initialMessages: CasterMessage[];
   initialDraft: Record<string, unknown> | null;
   savedCharacterId: string | null;
-  /** 같은 관리자의 모든 초안 요약 — 하단 스트립에 렌더 */
-  slots: DraftSlot[];
 };
 
 // ---------- 고정 인사말 ----------
@@ -190,7 +176,6 @@ export function CasterConsole({
   initialMessages,
   initialDraft,
   savedCharacterId: initialSavedId,
-  slots,
 }: Props) {
   const router = useRouter();
   const [messages, setMessages] = useState<CasterMessage[]>(initialMessages);
@@ -533,22 +518,6 @@ export function CasterConsole({
     if (r.ok) router.push("/admin/caster");
   }, [runId, router]);
 
-  // 새 초안을 서버에 생성해 즉시 그 runId 로 이동한다. (기존 NewRunButton 을
-  // 이 콘솔 내부 스트립으로 이식.)
-  const [newBusy, setNewBusy] = useState(false);
-  const startNewDraft = useCallback(async () => {
-    if (newBusy) return;
-    setNewBusy(true);
-    try {
-      const r = await fetch("/api/admin/caster/runs", { method: "POST" });
-      if (!r.ok) return;
-      const j = (await r.json()) as { run: { id: string } };
-      router.push(`/admin/caster/${j.run.id}`);
-    } finally {
-      setNewBusy(false);
-    }
-  }, [newBusy, router]);
-
   const savedLink = useMemo(() => {
     if (!savedId) return null;
     return `/admin/characters/${savedId}`;
@@ -761,19 +730,9 @@ export function CasterConsole({
           </div>
         ) : null}
 
-        {/* === 3) 초안 스트립 — composer 바로 위. ===
-           1단 뎁스에서 항상 보이는 하단 패널. 다른 초안으로 스크롤 이동,
-           맨 뒤의 "+" 슬롯은 새 초안을 즉석에서 생성한다. composer 아래에
-           두면 모바일에서 키보드에 묻히거나 "끝" 으로 오인돼 안 보이므로
-           반드시 입력창 위에 올린다. */}
-        <DraftStrip
-          slots={slots}
-          activeId={runId}
-          onNewDraft={startNewDraft}
-          newBusy={newBusy}
-        />
-
-        {/* === 4) 입력창 === */}
+        {/* === 3) 입력창 ===
+           "내초안" 하단 스트립 제거. 사용자당 캐스터 세션은 1개만 존재하도록
+           /admin/caster 진입점이 단일 active run 을 보장한다. */}
         <div className="flex gap-2 border-t border-outline/10 p-3">
           <textarea
             rows={2}
@@ -801,104 +760,6 @@ export function CasterConsole({
         </div>
       </div>
     </div>
-  );
-}
-
-function DraftStrip({
-  slots,
-  activeId,
-  onNewDraft,
-  newBusy,
-}: {
-  slots: DraftSlot[];
-  activeId: string;
-  onNewDraft: () => void | Promise<void>;
-  newBusy: boolean;
-}) {
-  return (
-    <div className="border-t border-outline/20 bg-surface-container/40">
-      <div className="flex items-center justify-between px-3 pt-2 pb-1">
-        <p className="label-mono text-on-surface-variant text-[10px]">
-          내 초안 · {slots.length}
-        </p>
-        <p className="text-[10px] text-on-surface-variant/70">
-          좌우로 스크롤 → 다른 초안 선택
-        </p>
-      </div>
-      <div className="flex gap-2 overflow-x-auto px-3 pb-2 scrollbar-thin">
-        {slots.map((s) => (
-          <DraftSlotCard
-            key={s.id}
-            slot={s}
-            active={s.id === activeId}
-          />
-        ))}
-        <button
-          type="button"
-          onClick={() => void onNewDraft()}
-          disabled={newBusy}
-          className="shrink-0 w-32 h-[72px] rounded-md border-2 border-dashed border-primary/40 bg-primary/5 text-primary flex flex-col items-center justify-center gap-1 text-xs font-bold hover:bg-primary/10 active:brightness-90 disabled:opacity-50 transition-colors"
-          aria-label="새 초안"
-        >
-          <Plus size={16} strokeWidth={2.5} />
-          <span>새 초안</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function DraftSlotCard({
-  slot,
-  active,
-}: {
-  slot: DraftSlot;
-  active: boolean;
-}) {
-  const label = slot.draftName ?? "이름 미정";
-  const statusPill =
-    slot.status === "saved"
-      ? "저장됨"
-      : slot.status === "draft_ready"
-        ? "준비됨"
-        : "작성 중";
-  return (
-    <Link
-      href={{ pathname: `/admin/caster/${slot.id}` }}
-      className={[
-        "shrink-0 w-40 h-[72px] rounded-md border p-2 flex flex-col gap-1 transition-colors active:brightness-95",
-        active
-          ? "border-primary bg-primary/15 text-on-surface ring-2 ring-primary/40 ring-offset-1 ring-offset-surface-container"
-          : "border-outline/30 bg-surface-container-lowest hover:bg-surface-container text-on-surface",
-      ].join(" ")}
-      aria-current={active ? "page" : undefined}
-    >
-      <div className="flex items-center gap-1.5 min-w-0">
-        <Sparkles
-          size={10}
-          strokeWidth={2.5}
-          className={active ? "text-primary shrink-0" : "text-primary/60 shrink-0"}
-        />
-        <span className="truncate text-xs font-bold">{label}</span>
-        {active ? (
-          <span className="ml-auto shrink-0 rounded-sm bg-primary px-1 text-[9px] font-bold text-on-primary">
-            현재
-          </span>
-        ) : null}
-      </div>
-      {slot.tagline ? (
-        <p className="text-[10px] text-on-surface-variant line-clamp-2 leading-snug">
-          {slot.tagline}
-        </p>
-      ) : (
-        <p className="text-[10px] text-on-surface-variant/60 italic">
-          아직 한 줄 소개 없음
-        </p>
-      )}
-      <p className="mt-auto label-mono text-[9px] text-on-surface-variant/70">
-        {statusPill}
-      </p>
-    </Link>
   );
 }
 
@@ -971,7 +832,15 @@ function MessageBlock({
             : "mr-auto bg-surface-container text-on-surface",
         ].join(" ")}
       >
-        {visibleText || (!isUser ? "…" : "")}
+        {visibleText
+          ? visibleText
+          : !isUser
+            ? (
+                // 빈 model placeholder 는 타이핑 인디케이터로 대체.
+                // 기존 "…" 문자열은 정적이라 "멈췄나?" 오해가 잦다.
+                <TypingIndicator compact />
+              )
+            : ""}
       </div>
 
       {/* user bubble: 확정한 썸네일 인라인 프리뷰 */}

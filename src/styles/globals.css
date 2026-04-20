@@ -387,6 +387,49 @@ h3.font-headline {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Typing indicator — 캐릭터/캐스터 대기 시간을 덜 지루하게 만드는 표식.        */
+/*  기본 animate-bounce 는 단조롭다. 여기선:                                    */
+/*    1) 3-dot 이 스케일+페이드 로 물결치듯 크게 변한다 (bounce 보다 큰 이동)    */
+/*    2) 동시에 버블 내부를 primary-tint 그라디언트가 좌→우로 훑어 지나간다.      */
+/*  합쳐서 "뭔가 작동하는 중" 이라는 시각적 피드백을 강화.                      */
+/* -------------------------------------------------------------------------- */
+
+@keyframes typing-wave {
+  0%, 55%, 100% {
+    transform: scale(0.55) translateY(0);
+    opacity: 0.35;
+  }
+  28% {
+    transform: scale(1.15) translateY(-3px);
+    opacity: 1;
+  }
+}
+.animate-typing-wave {
+  animation: typing-wave 1.05s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: center;
+}
+
+@keyframes typing-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+.animate-typing-shimmer {
+  animation: typing-shimmer 1.8s ease-in-out infinite;
+}
+
+/* Caster "…" placeholder 와 호환 위한 pure text 버전 — 텍스트가 커졌다
+   작아지는 타이핑 느낌의 커서 플래시. */
+@keyframes typing-dots-text {
+  0%, 20% { content: "·"; }
+  40% { content: "··"; }
+  60%, 100% { content: "···"; }
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Touch feedback — 호버가 없는 터치 디바이스에서                              */
 /*  모든 버튼/링크/role=button 에 눌림 시각 피드백을 준다.                      */
 /*  개별 컴포넌트에 active: 유틸을 일일이 붙이지 않아도 일관 UX.                */

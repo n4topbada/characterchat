@@ -38,6 +38,7 @@ async function loadCharacters(): Promise<CarouselCharacter[]> {
               mbti: core?.mbti,
             });
       return {
+        id: r.id,
         slug: r.slug,
         name: r.name,
         tagline: r.tagline,

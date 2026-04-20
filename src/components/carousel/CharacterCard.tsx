@@ -1,11 +1,15 @@
 "use client";
-import Link from "next/link";
-import { ArrowRight, Bookmark } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { ArrowRight, Bookmark, Loader2 } from "lucide-react";
+// Link 는 /characters/[slug] 랜딩을 건너뛰기로 하면서 더 이상 필요 없음.
 import { SafePortrait } from "@/components/character/SafePortrait";
 import { PhysicalStats } from "@/components/character/PhysicalStats";
 import { mergeIntro } from "@/lib/character-display";
 
 export type CarouselCharacter = {
+  /** 세션 upsert 에 필요한 실제 Character id. slug 만으로는 조회 라운드트립이 한 번 더 든다. */
+  id: string;
   slug: string;
   name: string;
   /** 한줄 소개 (tagline) — backstory 와 ','로 결합되어 단일 intro 가 된다 */
@@ -33,6 +37,37 @@ export type CarouselCharacter = {
 export function CharacterCard({ c }: { c: CarouselCharacter; index: number }) {
   const tags = (c.tags ?? []).slice(0, 6);
   const intro = mergeIntro(c.tagline, c.backstorySummary);
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  // 카드의 "대화 시작" → /characters/[slug] 랜딩을 건너뛰고 바로 세션을 upsert 해
+  // /chat/[id] 로 이동. POST /api/sessions 는 idempotent (기존 세션 있으면 reused).
+  async function handleStart() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ characterId: c.id }),
+      });
+      if (!r.ok) {
+        setBusy(false);
+        // 대부분 401 — 비로그인 상태. 로그인 후 현재 슬러그로 돌아오게 한다.
+        if (r.status === 401) {
+          router.push(
+            `/auth/signin?callbackUrl=/find` as never,
+          );
+          return;
+        }
+        return;
+      }
+      const { id } = (await r.json()) as { id: string };
+      router.push(`/chat/${id}` as never);
+    } catch {
+      setBusy(false);
+    }
+  }
 
   return (
     <section className="h-full w-full snap-start relative flex flex-col px-5 pt-6 pb-6">
@@ -105,20 +140,29 @@ export function CharacterCard({ c }: { c: CarouselCharacter; index: number }) {
               }}
             />
 
-            {/* CTA — parallelogram */}
-            <Link
-              href={`/characters/${c.slug}`}
-              className="relative group flex items-center justify-center overflow-hidden h-14 active:scale-[0.98] transition-transform mt-2"
+            {/* CTA — parallelogram. 클릭 즉시 세션 upsert → /chat/[id] 로 점프.
+                랜딩 페이지(/characters/[slug]) 는 건너뛴다. */}
+            <button
+              type="button"
+              onClick={handleStart}
+              disabled={busy}
+              className="relative group flex items-center justify-center overflow-hidden h-14 w-full active:scale-[0.98] transition-transform mt-2 disabled:opacity-60"
             >
               <div
                 className="absolute inset-0 btn-cta-gradient group-hover:brightness-110 transition-all"
                 style={{ transform: "skewX(-12deg)" }}
               />
               <div className="relative flex items-center gap-3 text-on-primary font-headline font-bold tracking-[0.2em] text-sm">
-                <span>대화 시작</span>
-                <ArrowRight size={16} strokeWidth={2.5} />
+                {busy ? (
+                  <Loader2 size={16} className="animate-spin" strokeWidth={2.5} />
+                ) : (
+                  <>
+                    <span>대화 시작</span>
+                    <ArrowRight size={16} strokeWidth={2.5} />
+                  </>
+                )}
               </div>
-            </Link>
+            </button>
           </div>
         </div>
       </div>
