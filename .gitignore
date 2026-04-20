@@ -28,3 +28,10 @@ prisma/dev.db*
 asset/**/*.png
 asset/**/*.zip
 .env.prod
+
+# 캐릭터 대용량 에셋 — gallery / backgrounds / ani 는 Vercel Blob 으로 업로드하고
+# repo 에는 두지 않는다. portrait.webp (56KB 카드 썸네일) 는 /find 가 동작하는 데
+# 필수라 `git add -f public/characters/<slug>/portrait.webp` 로 명시 트래킹한다.
+public/characters/*/gallery/
+public/characters/*/backgrounds/
+public/portraits/ani/
