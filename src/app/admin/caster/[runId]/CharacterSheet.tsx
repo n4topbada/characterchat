@@ -46,6 +46,12 @@ export type SheetDraft = {
   persona?: PersonaPartial;
   /** 관리자가 썸네일에서 "이 느낌" 으로 확정한 레퍼런스 이미지. 임시 대표 이미지로 사용. */
   referenceImage?: SheetReferenceImage | null;
+  /**
+   * Caster 가 최종 커밋 동의를 받은 상태. true 가 되면 CasterConsole 이
+   * 자동 커밋을 트리거하고 /find?focus=<slug>&gen=1 로 이동한다.
+   * /admin/characters/[id] 편집기 등 다른 소비자는 이 필드를 무시한다.
+   */
+  confirm?: boolean;
 };
 
 type Props = {

@@ -196,6 +196,31 @@ export function CasterConsole({
   const [jsonText, setJsonText] = useState(() =>
     JSON.stringify(sanitizeDraft(initialDraft) ?? {}, null, 2),
   );
+  // 포트레이트 Agent 상태 — 커밋 직후 auto-trigger. 드로어에 진행 뱃지로 노출.
+  //   idle    : 아직 트리거 안 됨
+  //   running : SSE 스트리밍 중
+  //   saved   : 이미지 Asset 저장 완료
+  //   error   : 실패 (message 표시, 수동 재시도 버튼 제공)
+  const [portraitStatus, setPortraitStatus] = useState<
+    "idle" | "running" | "saved" | "error"
+  >("idle");
+  const [portraitMessage, setPortraitMessage] = useState<string | null>(null);
+  const [portraitPreview, setPortraitPreview] = useState<string | null>(null);
+  const [portraitProgress, setPortraitProgress] = useState<number>(0);
+
+  // 애니메이션 Agent 상태 — 포트레이트 saved 직후 체인 호출.
+  //   idle    : 아직 트리거 안 됨
+  //   running : Veo/ffmpeg 진행 중 (stage 로 단계 표시)
+  //   saved   : animated webp 저장 완료
+  //   error   : 실패
+  const [animationStatus, setAnimationStatus] = useState<
+    "idle" | "running" | "saved" | "error"
+  >("idle");
+  const [animationStage, setAnimationStage] = useState<string | null>(null);
+  const [animationMessage, setAnimationMessage] = useState<string | null>(null);
+  const [animationPreview, setAnimationPreview] = useState<string | null>(null);
+  // "/saved 받은 assetId" — 사용자가 애니메이션 재시도할 때 쓴다.
+  const [animationAssetId, setAnimationAssetId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 업스트림 혼잡/에러 시 "같은 입력을 다시 보내기" 를 할 수 있도록 마지막
@@ -206,6 +231,9 @@ export function CasterConsole({
     imageRef?: ImageRef;
     previewImage?: string;
   } | null>(null);
+  // draft.confirm === true 로 자동 커밋을 이미 시도했는지. 재진입/재렌더로 인한
+  // 중복 POST 를 막는 idempotent 가드. 실패 시 롤백해서 다시 시도할 수 있게 한다.
+  const autoCommitTriedRef = useRef(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -499,6 +527,204 @@ export function CasterConsole({
     };
   }, [draft]);
 
+  /**
+   * 애니메이션 Agent 를 SSE 로 호출한다.
+   * - 포트레이트가 저장되고 assetId 가 확보된 직후 체인 호출.
+   * - Veo 폴링(수 분) 중에는 `stage`("veo_poll 40s") 로 하트비트.
+   * - 최종 saved 이벤트에서 animationUrl 받아 프리뷰 표시.
+   */
+  const runAnimationAgent = useCallback(
+    async (assetId: string, opts?: { force?: boolean }) => {
+      setAnimationStatus("running");
+      setAnimationStage("시작");
+      setAnimationMessage(null);
+      setAnimationAssetId(assetId);
+      try {
+        const r = await fetch(`/api/admin/assets/${assetId}/animate`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "text/event-stream",
+          },
+          body: JSON.stringify({ force: !!opts?.force }),
+        });
+        if (!r.ok || !r.body) {
+          setAnimationStatus("error");
+          setAnimationMessage(`애니메이션 생성 실패 (${r.status})`);
+          return;
+        }
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let gotTerminal = false;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const frames = buf.split("\n\n");
+          buf = frames.pop() ?? "";
+          for (const frame of frames) {
+            const lines = frame.split("\n");
+            const evLine = lines.find((l) => l.startsWith("event:"));
+            const dataLine = lines.find((l) => l.startsWith("data:"));
+            if (!evLine || !dataLine) continue;
+            const event = evLine.slice(6).trim();
+            const data = dataLine.slice(5).trim();
+            try {
+              if (event === "started") {
+                setAnimationStage("Veo 모션 설계");
+              } else if (event === "download") {
+                setAnimationStage("원본 이미지 준비");
+              } else if (event === "veo_start") {
+                setAnimationStage("Veo 비디오 생성 시작");
+              } else if (event === "veo_poll") {
+                const { elapsedSec } = JSON.parse(data) as {
+                  elapsedSec: number;
+                };
+                setAnimationStage(`Veo 렌더 중 ${elapsedSec}s`);
+              } else if (event === "veo_done") {
+                setAnimationStage("mp4 수신");
+              } else if (event === "ffmpeg_start") {
+                setAnimationStage("540x810 webp 변환");
+              } else if (event === "ffmpeg_done") {
+                setAnimationStage("업로드 준비");
+              } else if (event === "upload") {
+                setAnimationStage("Blob 업로드");
+              } else if (event === "saved") {
+                const j = JSON.parse(data) as { animationUrl: string };
+                setAnimationStatus("saved");
+                setAnimationPreview(j.animationUrl);
+                setAnimationStage(null);
+                gotTerminal = true;
+              } else if (event === "reused") {
+                const j = JSON.parse(data) as { animationUrl: string };
+                setAnimationStatus("saved");
+                setAnimationPreview(j.animationUrl);
+                setAnimationStage(null);
+                gotTerminal = true;
+              } else if (event === "error") {
+                const { message } = JSON.parse(data) as { message: string };
+                setAnimationStatus("error");
+                setAnimationMessage(message);
+                setAnimationStage(null);
+                gotTerminal = true;
+              }
+            } catch {
+              // ignore frame parse errors
+            }
+          }
+        }
+        if (!gotTerminal) {
+          setAnimationStatus("error");
+          setAnimationMessage("빈 응답");
+          setAnimationStage(null);
+        }
+        router.refresh();
+      } catch (e) {
+        setAnimationStatus("error");
+        setAnimationMessage(e instanceof Error ? e.message : String(e));
+        setAnimationStage(null);
+      }
+    },
+    [router],
+  );
+
+  /**
+   * 포트레이트 Agent 를 SSE 로 호출한다.
+   * - 커밋 직후 auto-trigger 되고, 드로어 상단에 진행 뱃지를 띄운다.
+   * - 실패하면 error 상태 + "재시도" 버튼 (portraitStatus='error').
+   * - 성공하면 blobUrl 로 프리뷰 썸네일을 띄우고 router.refresh() 로 다른 뷰 반영.
+   * - saved 이벤트에서 assetId 를 받으면 즉시 runAnimationAgent 로 체인.
+   */
+  const runPortraitAgent = useCallback(
+    async (characterId: string) => {
+      setPortraitStatus("running");
+      setPortraitMessage(null);
+      setPortraitProgress(0);
+      // 새 포트레이트 시도 시 애니메이션 상태 초기화 (이전 실패가 남아있지 않도록)
+      setAnimationStatus("idle");
+      setAnimationMessage(null);
+      setAnimationPreview(null);
+      setAnimationAssetId(null);
+      setAnimationStage(null);
+      try {
+        const r = await fetch(
+          `/api/admin/characters/${characterId}/portrait/generate`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "text/event-stream",
+            },
+            body: JSON.stringify({ runId }),
+          },
+        );
+        if (!r.ok || !r.body) {
+          setPortraitStatus("error");
+          setPortraitMessage(`포트레이트 생성 실패 (${r.status})`);
+          return;
+        }
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let gotTerminal = false;
+        let savedAssetId: string | null = null;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const frames = buf.split("\n\n");
+          buf = frames.pop() ?? "";
+          for (const frame of frames) {
+            const lines = frame.split("\n");
+            const evLine = lines.find((l) => l.startsWith("event:"));
+            const dataLine = lines.find((l) => l.startsWith("data:"));
+            if (!evLine || !dataLine) continue;
+            const event = evLine.slice(6).trim();
+            const data = dataLine.slice(5).trim();
+            try {
+              if (event === "progress") {
+                const { chunks } = JSON.parse(data) as { chunks: number };
+                setPortraitProgress(chunks);
+              } else if (event === "saved") {
+                const j = JSON.parse(data) as {
+                  blobUrl: string;
+                  assetId: string;
+                };
+                setPortraitStatus("saved");
+                setPortraitPreview(j.blobUrl);
+                savedAssetId = j.assetId ?? null;
+                gotTerminal = true;
+              } else if (event === "error") {
+                const { message } = JSON.parse(data) as { message: string };
+                setPortraitStatus("error");
+                setPortraitMessage(message);
+                gotTerminal = true;
+              }
+            } catch {
+              // ignore frame parse errors
+            }
+          }
+        }
+        // 스트림이 끝났는데 saved/error 둘 다 못 받았으면 "이미지 못 받음" 취급.
+        if (!gotTerminal) {
+          setPortraitStatus("error");
+          setPortraitMessage("빈 응답");
+        }
+        router.refresh();
+        // 체인: 포트레이트 성공 → 애니메이션 Agent 자동 트리거.
+        // 실패해도 commit/포트레이트 결과는 유지. 애니메이션은 별개 뱃지로 상태 표시.
+        if (savedAssetId) {
+          void runAnimationAgent(savedAssetId);
+        }
+      } catch (e) {
+        setPortraitStatus("error");
+        setPortraitMessage(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [runId, router, runAnimationAgent],
+  );
+
   const commit = useCallback(async () => {
     setError(null);
     setValidationIssues([]);
@@ -539,10 +765,86 @@ export function CasterConsole({
       setSavedId(j.character.id);
       setStatus("saved");
       router.refresh();
+      // 커밋 성공 → 포트레이트 Agent 비동기 트리거. 실패해도 commit 은 성공 상태 유지.
+      void runPortraitAgent(j.character.id);
     } finally {
       setCommitBusy(false);
     }
-  }, [commitPayload, missing, runId, router]);
+  }, [commitPayload, missing, runId, router, runPortraitAgent]);
+
+  /**
+   * Caster 가 <patch>{"confirm": true}</patch> 를 보냈을 때 호출되는 자동 커밋.
+   * 동작 흐름:
+   *   1) commit 엔드포인트 호출 (수동 버튼과 동일)
+   *   2) 성공 시 /find?focus=<slug>&gen=1 로 이동
+   *   3) 포트레이트 / 애니메이션 SSE 는 Find 페이지의 CharacterCard 가 이어받아
+   *      "생성 중" 오버레이를 띄우고 완료 시 router.refresh() 한다.
+   *
+   * 수동 커밋 버튼과 달리 **이 페이지에 머무르지 않는다** — 유저는 곧바로 새
+   * 캐릭터를 찾기 메뉴에서 보게 된다. 포트레이트 Agent 체인을 여기서 돌리지
+   * 않는 이유: 라우터 이동으로 이 컴포넌트가 언마운트되면 fetch 가 중단된다.
+   */
+  const autoCommit = useCallback(async () => {
+    if (autoCommitTriedRef.current) return;
+    if (!commitPayload) return;
+    if (missing.length > 0) return;
+    if (status === "saved") return;
+    autoCommitTriedRef.current = true;
+    setCommitBusy(true);
+    setError(null);
+    setValidationIssues([]);
+    try {
+      const r = await fetch(`/api/admin/caster/runs/${runId}/commit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(commitPayload),
+      });
+      if (!r.ok) {
+        // 롤백 — 사용자가 수동으로 다시 누르거나 다음 confirm 턴에 재시도 가능.
+        autoCommitTriedRef.current = false;
+        const j = (await r.json().catch(() => null)) as
+          | {
+              error?: string;
+              issues?: { path: (string | number)[]; message: string }[];
+            }
+          | null;
+        if (j?.issues?.length) {
+          setValidationIssues(
+            j.issues.map((it) => `${it.path.join(".")}: ${it.message}`),
+          );
+        } else {
+          setError(j?.error ?? `자동 커밋 실패 (${r.status})`);
+        }
+        return;
+      }
+      const j = (await r.json()) as {
+        character: { id: string; slug: string; name: string };
+      };
+      setSavedId(j.character.id);
+      setStatus("saved");
+      // 포트레이트/애니메이션은 Find 페이지에서 SSE 로 이어 받는다.
+      router.push(
+        `/find?focus=${encodeURIComponent(j.character.slug)}&gen=1`,
+      );
+    } catch (e) {
+      autoCommitTriedRef.current = false;
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCommitBusy(false);
+    }
+  }, [commitPayload, missing.length, runId, router, status]);
+
+  // confirm 패치 감지 → 자동 커밋.
+  // draft?.confirm 이 true 가 되고 status 가 saved 가 아니며 필수 필드가 다 차
+  // 있을 때만 발동. commit 실패 시 autoCommitTriedRef 가 롤백되므로 다음 patch
+  // 이벤트 (예: 사용자가 추가 수정 후 모델이 다시 confirm 보냄) 에서 재시도 가능.
+  useEffect(() => {
+    if (!draft?.confirm) return;
+    if (status === "saved") return;
+    if (missing.length > 0) return;
+    if (commitBusy) return;
+    void autoCommit();
+  }, [draft?.confirm, status, missing.length, commitBusy, autoCommit]);
 
   const applyJsonEdit = useCallback(() => {
     try {
@@ -715,6 +1017,33 @@ export function CasterConsole({
                 <CheckCircle2 size={14} />
                 저장됨 · 캐릭터 편집 열기
               </a>
+            ) : null}
+
+            {savedId && portraitStatus !== "idle" ? (
+              <PortraitAgentBadge
+                status={portraitStatus}
+                message={portraitMessage}
+                preview={portraitPreview}
+                progress={portraitProgress}
+                onRetry={() => void runPortraitAgent(savedId)}
+              />
+            ) : null}
+
+            {animationStatus !== "idle" ? (
+              <AnimationAgentBadge
+                status={animationStatus}
+                stage={animationStage}
+                message={animationMessage}
+                preview={animationPreview}
+                onRetry={
+                  animationAssetId
+                    ? () =>
+                        void runAnimationAgent(animationAssetId, {
+                          force: true,
+                        })
+                    : undefined
+                }
+              />
             ) : null}
 
             {jsonMode ? (
@@ -999,6 +1328,152 @@ function ChoiceButtons({
           {c}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * 커밋 직후 비동기로 포트레이트를 그리는 Agent 상태 뱃지.
+ * 드로어 상단에 렌더되어 "그리는 중 → 저장됨" 을 시각화한다.
+ */
+function PortraitAgentBadge({
+  status,
+  message,
+  preview,
+  progress,
+  onRetry,
+}: {
+  status: "idle" | "running" | "saved" | "error";
+  message: string | null;
+  preview: string | null;
+  progress: number;
+  onRetry: () => void;
+}) {
+  if (status === "idle") return null;
+  if (status === "running") {
+    return (
+      <div className="mb-2 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xs text-on-surface">
+        <span
+          aria-hidden
+          className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary"
+        />
+        <span className="font-semibold">포트레이트 그리는 중</span>
+        <span className="text-on-surface-variant">
+          · 한국 웹툰 스타일{progress > 0 ? ` · chunk ${progress}` : ""}
+        </span>
+      </div>
+    );
+  }
+  if (status === "saved") {
+    return (
+      <div className="mb-2 flex items-center gap-2 rounded-md border border-emerald-300/60 bg-emerald-50/70 px-2.5 py-1.5 text-xs text-emerald-900">
+        {preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={preview}
+            alt=""
+            className="h-10 w-8 shrink-0 rounded-sm object-cover"
+          />
+        ) : (
+          <CheckCircle2 size={14} className="shrink-0" />
+        )}
+        <span className="font-semibold">포트레이트 저장됨</span>
+      </div>
+    );
+  }
+  // error
+  return (
+    <div className="mb-2 flex items-start gap-2 rounded-md border border-rose-300/60 bg-rose-50/70 px-2.5 py-1.5 text-xs text-rose-900">
+      <AlertCircle size={14} className="mt-0.5 shrink-0" />
+      <div className="flex-1">
+        <p className="font-semibold">포트레이트 생성 실패</p>
+        {message ? (
+          <p className="mt-0.5 text-[11px] opacity-80">{message}</p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="shrink-0 inline-flex items-center gap-1 rounded-md border border-rose-300 bg-white/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-800 hover:bg-white active:scale-95 transition-transform"
+      >
+        <RotateCw size={10} strokeWidth={2.5} />
+        재시도
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 포트레이트 saved 직후 이어지는 Veo 3.1 Lite 애니메이션(animated webp) 생성 상태 뱃지.
+ * - running: 현재 단계(stage) 문구를 노출 ("Veo 렌더 중 40s" 등).
+ * - saved:   animationUrl 미리보기.
+ * - error:   재시도 버튼 제공 (force=true 로 강제 재생성).
+ */
+function AnimationAgentBadge({
+  status,
+  stage,
+  message,
+  preview,
+  onRetry,
+}: {
+  status: "idle" | "running" | "saved" | "error";
+  stage: string | null;
+  message: string | null;
+  preview: string | null;
+  onRetry?: () => void;
+}) {
+  if (status === "idle") return null;
+  if (status === "running") {
+    return (
+      <div className="mb-2 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xs text-on-surface">
+        <span
+          aria-hidden
+          className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary"
+        />
+        <span className="font-semibold">포트레이트 애니메이션 만드는 중</span>
+        {stage ? (
+          <span className="text-on-surface-variant">· {stage}</span>
+        ) : null}
+      </div>
+    );
+  }
+  if (status === "saved") {
+    return (
+      <div className="mb-2 flex items-center gap-2 rounded-md border border-emerald-300/60 bg-emerald-50/70 px-2.5 py-1.5 text-xs text-emerald-900">
+        {preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={preview}
+            alt=""
+            className="h-10 w-8 shrink-0 rounded-sm object-cover"
+          />
+        ) : (
+          <CheckCircle2 size={14} className="shrink-0" />
+        )}
+        <span className="font-semibold">애니메이션 저장됨</span>
+      </div>
+    );
+  }
+  // error
+  return (
+    <div className="mb-2 flex items-start gap-2 rounded-md border border-rose-300/60 bg-rose-50/70 px-2.5 py-1.5 text-xs text-rose-900">
+      <AlertCircle size={14} className="mt-0.5 shrink-0" />
+      <div className="flex-1">
+        <p className="font-semibold">애니메이션 생성 실패</p>
+        {message ? (
+          <p className="mt-0.5 text-[11px] opacity-80">{message}</p>
+        ) : null}
+      </div>
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="shrink-0 inline-flex items-center gap-1 rounded-md border border-rose-300 bg-white/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-800 hover:bg-white active:scale-95 transition-transform"
+        >
+          <RotateCw size={10} strokeWidth={2.5} />
+          재시도
+        </button>
+      ) : null}
     </div>
   );
 }

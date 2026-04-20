@@ -29,6 +29,7 @@ async function loadCharacters(): Promise<CarouselCharacter[]> {
     });
     return rows.map((r) => {
       const core = r.personaCore;
+      const asset = r.assets[0];
       const tags =
         core?.shortTags && core.shortTags.length > 0
           ? core.shortTags
@@ -43,7 +44,11 @@ async function loadCharacters(): Promise<CarouselCharacter[]> {
         name: r.name,
         tagline: r.tagline,
         accentColor: r.accentColor,
-        portraitUrl: r.assets[0]?.animationUrl ?? r.assets[0]?.blobUrl ?? null,
+        // 표시용 URL — 애니메이션이 있으면 그걸 우선, 없으면 스틸컷, 둘 다 없으면 null.
+        portraitUrl: asset?.animationUrl ?? asset?.blobUrl ?? null,
+        // SSE 재개 판정용 메타. 카드에서 "어떤 단계부터 돌릴지" 결정한다.
+        portraitAssetId: asset?.id ?? null,
+        hasAnimation: !!asset?.animationUrl,
         backstorySummary: core?.backstorySummary ?? null,
         tags,
         ageText: core?.ageText ?? null,
@@ -59,11 +64,32 @@ async function loadCharacters(): Promise<CarouselCharacter[]> {
   }
 }
 
-export default async function FindPage() {
+/**
+ * Find 페이지 — 세로 캐러셀로 공개된 캐릭터를 보여준다.
+ *
+ * 쿼리 파라미터:
+ *   - focus=<slug> : 이 슬러그의 카드를 초기 포커스 (스크롤 & auto-generate 대상 지정)
+ *   - gen=1        : focus 와 함께 오면, 해당 카드가 portrait/animation SSE 를
+ *                    마운트 시점에 자동으로 호출한다. Caster 의 confirm-autocommit
+ *                    직후 navigate 되어 들어오는 경로용. 이미 모든 에셋이 준비돼
+ *                    있으면 카드가 조용히 no-op.
+ */
+export default async function FindPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ focus?: string; gen?: string }>;
+}) {
+  const sp = await searchParams;
+  const focusSlug = typeof sp.focus === "string" ? sp.focus : null;
+  const autoGenerate = sp.gen === "1";
   const characters = await loadCharacters();
   return (
     <main className="h-full relative">
-      <VerticalCarousel characters={characters} />
+      <VerticalCarousel
+        characters={characters}
+        focusSlug={focusSlug}
+        autoGenerate={autoGenerate}
+      />
     </main>
   );
 }

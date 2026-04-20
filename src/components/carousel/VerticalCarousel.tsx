@@ -1,17 +1,32 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { CharacterCard, type CarouselCharacter } from "./CharacterCard";
 
 export function VerticalCarousel({
   characters,
+  focusSlug,
+  autoGenerate,
 }: {
   characters: CarouselCharacter[];
+  /** 특정 슬러그의 카드로 마운트 시 즉시 스크롤. 없으면 첫 카드(=최신) 기본. */
+  focusSlug?: string | null;
+  /**
+   * focusSlug 에 해당하는 카드가 portrait/animation 을 SSE 로 자동 생성할지.
+   * Caster confirm-autocommit 후 /find?focus=...&gen=1 로 들어올 때 true.
+   */
+  autoGenerate?: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   // 스크롤 위치에 따라 위/아래 화살표 힌트 가시성 토글.
   const [atTop, setAtTop] = useState(true);
   const [atBottom, setAtBottom] = useState(characters.length <= 1);
+
+  // focusSlug 로 찾은 카드 인덱스. SSR 결과가 바뀔 수 있으니 characters 기준으로 재계산.
+  const focusIndex = useMemo(() => {
+    if (!focusSlug) return -1;
+    return characters.findIndex((c) => c.slug === focusSlug);
+  }, [characters, focusSlug]);
 
   useEffect(() => {
     const el = ref.current;
@@ -44,6 +59,16 @@ export function VerticalCarousel({
     return () => el.removeEventListener("scroll", update);
   }, [characters.length]);
 
+  // focusSlug 가 바뀌면 해당 카드로 바로 스크롤. Caster 커밋 직후 내려오면 index 0
+  // 이 이미 최신(커밋된) 카드일 확률이 높지만 명시적으로 꽂아준다.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (focusIndex < 0) return;
+    // instant: 느낌상 "이미 보고 있던 것" 처럼 보이는 쪽이 UX 일관적.
+    el.scrollTo({ top: el.clientHeight * focusIndex, behavior: "instant" });
+  }, [focusIndex]);
+
   if (!characters.length) {
     return (
       <div className="h-full flex items-center justify-center px-8">
@@ -75,7 +100,14 @@ export function VerticalCarousel({
         aria-label="캐릭터 세로 캐러셀"
       >
         {characters.map((c, i) => (
-          <CharacterCard key={c.slug} c={c} index={i} />
+          <CharacterCard
+            key={c.slug}
+            c={c}
+            index={i}
+            // autoGenerate 는 "포커스된 카드 한 장" 에만 준다 — 다른 카드가 마운트
+            // 시 같이 SSE 를 때리면 무관한 에셋도 재생성될 위험이 있다.
+            autoGenerate={!!autoGenerate && i === focusIndex}
+          />
         ))}
       </div>
 

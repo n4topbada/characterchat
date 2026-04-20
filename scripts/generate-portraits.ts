@@ -1,8 +1,12 @@
 // scripts/generate-portraits.ts
-// 씨드 캐릭터 3명에 대해 3:4 / 1K 포트레이트를 Gemini 로 생성하고
-//  - public/portraits/{slug}.png 로 저장
-//  - Asset(kind="portrait") 행을 upsert (blobUrl=/portraits/{slug}.png)
-//  - Character.portraitAssetId 를 갱신
+// 씨드 캐릭터의 포트레이트를 생성해
+//   - public/portraits/{slug}.png 로 저장
+//   - Asset(kind="portrait") 행을 upsert (blobUrl=/portraits/{slug}.png)
+//   - Character.portraitAssetId 를 갱신
+//
+// 파이프라인은 Caster 커밋 후 자동 트리거되는 Agent 와 동일하다:
+//   src/lib/portraits-stream.ts 의 collectPortrait() 를 씀 → 한국 웹툰 스타일 스펙이
+//   시스템 프롬프트로 고정되어 씨드 캐릭터와 Caster 산출물이 같은 스타일로 찍힌다.
 //
 // 실행:  npx tsx scripts/generate-portraits.ts
 //        npx tsx scripts/generate-portraits.ts --slug aria   (단일 대상)
@@ -11,36 +15,35 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
-import {
-  generatePortraitBytes,
-  savePortraitForCharacter,
-} from "@/lib/portraits";
+import { savePortraitForCharacter } from "@/lib/portraits";
+import { collectPortrait } from "@/lib/portraits-stream";
 
-// slug → 포트레이트 프롬프트. 씨드 캐릭터용 "큐레이팅" 프롬프트.
-// 관리자 콘솔의 자동 재생성은 PersonaCore 에서 프롬프트를 조립한다(buildPortraitPrompt).
+// 씨드 캐릭터 전용 큐레이팅 프롬프트.
+// 스타일 "한국 웹툰" 스펙은 collectPortrait() 의 system instruction 이 고정하므로
+// 여기선 "누구인가" 만 서술한다. 스타일 키워드를 중복해서 넣어도 무방.
 const PROMPTS: Record<string, string> = {
   aria: [
-    "Studio portrait of an 18-year-old female apprentice mage, East Asian features, long brown braided hair, round wire-rim glasses, ink-stained sleeves of a cream linen robe.",
-    "Holding an open, worn leather-bound book. Warm candlelight from the left, soft rim light. Ancient library shelves blurred in the background.",
-    "Gentle, focused expression — mid-thought, not smiling. Shoulders slightly turned.",
-    "Painterly semi-realism, muted warm palette with amber accents (#d97706). Cinematic, magazine-cover framing.",
-    "Subject fills frame vertically — chest-up composition, head in upper third. 3:4 portrait aspect ratio.",
+    "18세의 여성 견습 마법사. 동아시아 외모, 긴 갈색 땋은 머리, 원형 와이어림 안경.",
+    "상아색 린넨 로브에 잉크 얼룩이 진 소매. 낡은 가죽 장정 책을 펼쳐 들고 있다.",
+    "왼쪽에서 들어오는 따뜻한 촛불빛, 부드러운 림라이트. 고대 도서관 책장이 배경에서 흐려진다.",
+    "차분하고 집중한 표정 — 생각에 잠긴 중. 웃지 않는다. 어깨를 살짝 틀었다.",
+    "액센트 컬러는 앰버(#d97706). 상반신 구도, 3:4 세로 초상.",
   ].join(" "),
 
   yura: [
-    "Studio portrait of a 27-year-old East Asian woman in a graphite-grey hooded zip-up jacket, pale skin, tired eyes, short bob haircut.",
-    "A lanyard ID card hangs at her collar. Cool blue-violet monitor light washes her face from the lower-left. Out-of-focus server-rack LEDs bokeh in the background.",
-    "Quiet, unreadable expression — looking slightly past camera as if reading a log. Minimal makeup.",
-    "Clean cinematic photo realism, near-future research lab aesthetic. Dominant palette: cool violet (#7c3aed) and deep charcoal.",
-    "Chest-up portrait, subject centered, 3:4 portrait aspect ratio.",
+    "27세의 동아시아 여성. 흑연색 후드 집업, 창백한 피부, 피곤한 눈빛, 숏 보브 컷.",
+    "목 옆으로 사원증 랜야드. 왼쪽 아래에서 차가운 파란-보라 모니터 빛이 얼굴을 씻는다.",
+    "배경에는 초점이 흐려진 서버 랙 LED 보케.",
+    "표정은 조용하고 읽히지 않음 — 카메라를 살짝 지나쳐 로그를 읽는 듯한 시선. 메이크업은 최소.",
+    "근미래 연구실 무드. 주조는 차가운 바이올렛(#7c3aed)과 짙은 차콜. 상반신 구도, 3:4 세로.",
   ].join(" "),
 
   jun: [
-    "Studio portrait of a 36-year-old East Asian man, short black hair under a navy-blue knit beanie, faint stubble, warm brown eyes, faded apron over a worn long-sleeve shirt.",
-    "A visible burn scar on his right forearm. Steam curling up from a stainless pot just out of frame. Paper lantern warmth from the right, slight blue night haze from the left.",
-    "Relaxed half-smile, mid-conversation, one eyebrow slightly raised — the look of a bartender about to listen.",
-    "Photo-realistic cinematic, late-night Seoul street-food vibe. Teal accents (#0891b2) in signage bokeh behind.",
-    "Chest-up composition, shoulders squared, 3:4 portrait aspect ratio.",
+    "36세의 동아시아 남성. 네이비 니트 비니 아래로 짧은 검은 머리, 옅은 수염, 따뜻한 갈색 눈, 낡은 긴소매 위에 색바랜 앞치마.",
+    "오른쪽 팔뚝에 보이는 화상 흉터. 프레임 밖의 스테인리스 냄비에서 김이 피어오른다.",
+    "오른쪽에서 들어오는 종이 등불의 따뜻한 빛, 왼쪽에서는 옅은 파란 밤 안개.",
+    "대화 중의 편안한 반미소, 한쪽 눈썹이 살짝 올라감 — 이야기를 들어 주려는 바텐더의 인상.",
+    "늦은 밤 서울 길거리 포차의 분위기. 배경 간판 보케에 티일(#0891b2) 액센트. 상반신 구도, 3:4 세로.",
   ].join(" "),
 };
 
@@ -66,8 +69,8 @@ async function run() {
   await fs.mkdir(portraitsDir, { recursive: true });
 
   for (const slug of slugs) {
-    const prompt = PROMPTS[slug];
-    if (!prompt) {
+    const overridePrompt = PROMPTS[slug];
+    if (!overridePrompt) {
       console.warn(`[portraits] no prompt for slug='${slug}' — skip`);
       continue;
     }
@@ -75,6 +78,7 @@ async function run() {
     const character = await prisma.character.findUnique({
       where: { slug },
       include: {
+        personaCore: true,
         assets: { where: { kind: "portrait" }, orderBy: { order: "asc" } },
       },
     });
@@ -90,13 +94,26 @@ async function run() {
       .catch(() => false);
 
     if (exists && !args.force && character.assets.length > 0) {
-      console.log(`[portraits] ${slug} — exists (skip; pass --force to regenerate)`);
+      console.log(
+        `[portraits] ${slug} — exists (skip; pass --force to regenerate)`,
+      );
       continue;
     }
 
-    console.log(`[portraits] ${slug} — generating...`);
+    console.log(`[portraits] ${slug} — generating (한국 웹툰 스타일)...`);
     try {
-      const { data, mimeType } = await generatePortraitBytes(prompt);
+      const { data, mimeType } = await collectPortrait({
+        character: {
+          name: character.name,
+          tagline: character.tagline,
+          accentColor: character.accentColor,
+          slug: character.slug,
+        },
+        persona: character.personaCore ?? null,
+        // 씨드 캐릭터에는 Caster 쓰레드가 없으므로 큐레이팅 프롬프트를 통째로 override.
+        // 이 경우에도 system prompt 의 한국 웹툰 스타일 스펙은 그대로 적용된다.
+        overridePrompt,
+      });
       const saved = await savePortraitForCharacter({
         characterId: character.id,
         slug,
@@ -107,7 +124,6 @@ async function run() {
         `[portraits] ${slug} ✓ saved (${saved.width}×${saved.height}) → ${saved.blobUrl}`,
       );
     } catch (e) {
-      // per-slug 에러는 배치를 중단시키지 않는다. 다음 캐릭터로 진행.
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[portraits] ${slug} ✗ failed: ${msg.slice(0, 200)}`);
     }

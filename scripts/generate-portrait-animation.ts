@@ -22,7 +22,10 @@
 // **주의**: 생성당 Veo 호출 비용 + Blob 업로드. 돌리기 전에 수량 확인하라.
 
 import { prisma } from "@/lib/db";
-import { generatePortraitAnimation } from "@/lib/animate/generatePortraitAnimation";
+// 스크립트와 관리자 SSE 엔드포인트가 같은 파이프라인(단일 권위)을 타도록
+// src/lib/animate/stream.ts 의 collectPortraitAnimation 을 재사용한다.
+// (이전엔 src/lib/animate/generatePortraitAnimation.ts 를 직접 호출했다.)
+import { collectPortraitAnimation } from "@/lib/animate/stream";
 
 type Args = {
   assetId?: string;
@@ -113,7 +116,7 @@ async function main() {
     const label = `[${i + 1}/${targets.length}] ${id}`;
     const t0 = Date.now();
     try {
-      const result = await generatePortraitAnimation({
+      const result = await collectPortraitAnimation({
         assetId: id,
         force: args.force,
         customPrompt: args.customPrompt,
