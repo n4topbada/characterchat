@@ -36,6 +36,9 @@ import {
   emptyDraft,
   renderDraftForPrompt,
   extractLegacyDraft,
+  computeServerCompletion,
+  decideCompletionGate,
+  renderCompletionGate,
   type CasterDraft,
 } from "@/lib/caster/prompt";
 import {
@@ -91,12 +94,21 @@ export async function POST(
 
   const run = await prisma.casterRun.findFirst({
     where: { id, adminUserId: guard.userId },
-    select: { id: true, status: true, draftJson: true },
+    select: { id: true, status: true, draftJson: true, coverage: true },
   });
   if (!run) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (run.status === "saved" || run.status === "cancelled") {
     return NextResponse.json({ error: "run_closed" }, { status: 409 });
   }
+
+  // coverage.meta.lastAskedAtTurn — 완료 게이트에서 "이미 한 번 확인요청 했나?"
+  // 를 판정하는 근거. 매 턴 최신화된다. coverage 필드는 Json? 이라 free-form.
+  const coverageMeta =
+    (run.coverage as { meta?: { lastAskedAtTurn?: number | null } } | null)?.meta ?? {};
+  const lastAskedAtTurn: number | null =
+    typeof coverageMeta.lastAskedAtTurn === "number"
+      ? coverageMeta.lastAskedAtTurn
+      : null;
 
   // user_msg 기록 (imageRef 는 DB 에 저장하지 않는다 — 텍스트만 남긴다)
   await prisma.casterEvent.create({
@@ -156,12 +168,23 @@ export async function POST(
     }
   }
 
-  // 누적 드래프트 → systemInstruction 에 주입해 모델이 이미 아는 것은 건너뛰게
+  // 누적 드래프트 → systemInstruction 에 주입해 모델이 이미 아는 것은 건너뛰게.
+  // 완료 게이트도 함께 주입 — 100% 도달 시 모델이 "커밋할까?" 한 번만 묻도록.
   const currentDraft = normalizeDraft(run.draftJson);
+  const pct = computeServerCompletion(currentDraft);
+  // 이번 턴 user_msg 포함한 누적 사용자 턴 수 (방금 위에서 create 한 것까지 포함).
+  const userTurnCount = events.filter((e) => e.kind === "user_msg").length;
+  const gateState = decideCompletionGate({
+    pct,
+    userTurnCount,
+    lastAskedAtTurn,
+  });
   const systemInstruction =
     CASTER_SYSTEM +
     "\n\n[현재 드래프트]\n" +
-    renderDraftForPrompt(currentDraft);
+    renderDraftForPrompt(currentDraft) +
+    "\n\n" +
+    renderCompletionGate(gateState, pct);
 
   return sseStream(async (send) => {
     let full = "";
@@ -332,14 +355,38 @@ export async function POST(
 
     if (effectivePatch) {
       const nextDraft = mergePatch(currentDraft, effectivePatch);
+      // 이번 턴이 "확인요청" 이었으면 coverage.meta.lastAskedAtTurn 을 현재 사용자
+      // 턴 인덱스로 박아둔다. 다음 턴에서 decideCompletionGate 가 "패스" 로 읽는다.
+      const nextCoverage: Record<string, unknown> = {
+        ...((run.coverage as Record<string, unknown> | null) ?? {}),
+        meta: {
+          ...coverageMeta,
+          ...(gateState === "확인요청" ? { lastAskedAtTurn: userTurnCount } : {}),
+        },
+      };
       await prisma.casterRun.update({
         where: { id: run.id },
         data: {
           draftJson: nextDraft as unknown as object,
           status: "draft_ready",
+          coverage: nextCoverage as unknown as object,
         },
       });
       send("patch", { patch: effectivePatch, draft: nextDraft });
+    } else if (gateState === "확인요청") {
+      // patch 가 없어도(= 모델이 그냥 확인 문구만 보냄) meta 는 갱신해야
+      // 같은 확인을 다시 묻지 않는다.
+      const nextCoverage: Record<string, unknown> = {
+        ...((run.coverage as Record<string, unknown> | null) ?? {}),
+        meta: {
+          ...coverageMeta,
+          lastAskedAtTurn: userTurnCount,
+        },
+      };
+      await prisma.casterRun.update({
+        where: { id: run.id },
+        data: { coverage: nextCoverage as unknown as object },
+      });
     }
 
     send("done", { ok: true });
