@@ -47,20 +47,31 @@ export function gemini(): GoogleGenAI {
  * 스트리밍은 최초 request 수립까지만 이 레이어가 감싼다. 스트림 chunk 루프
  * 중간에 터지는 에러는 라우트 쪽 runAttempt 재시도로 처리.
  */
-const PER_KEY_RETRIES = 2; // 초기 시도 + 2회 재시도 = 키당 최대 3회
+const DEFAULT_PER_KEY_RETRIES = 2; // 초기 시도 + 2회 재시도 = 키당 최대 3회
 const BACKOFF_MS = [400, 1200]; // attempt 0 실패 후 400ms, attempt 1 실패 후 1200ms
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+type FallbackOptions = {
+  /**
+   * 키당 최대 재시도 횟수. 초기 시도를 제외한 추가 재시도 수.
+   * 기본 2 (= 키당 최대 3회 호출). 503 처럼 복구까지 수 분 걸리는 업스트림
+   * 과부하에서는 0~1 로 줄여 "전체 대기 시간 vs 복구 가능성" 을 조율한다.
+   */
+  perKeyRetries?: number;
+};
+
 export async function withGeminiFallback<T>(
   fn: (ai: GoogleGenAI, keyIndex: number) => Promise<T>,
+  options?: FallbackOptions,
 ): Promise<T> {
   const keys = readKeys();
+  const perKeyRetries = options?.perKeyRetries ?? DEFAULT_PER_KEY_RETRIES;
   let lastErr: unknown;
   for (let i = 0; i < keys.length; i++) {
-    for (let attempt = 0; attempt <= PER_KEY_RETRIES; attempt++) {
+    for (let attempt = 0; attempt <= perKeyRetries; attempt++) {
       try {
         return await fn(clientFor(keys[i]), i);
       } catch (e) {
@@ -68,7 +79,7 @@ export async function withGeminiFallback<T>(
         const transient = isTransient(e);
         if (!transient) throw e;
 
-        const hasMoreAttempts = attempt < PER_KEY_RETRIES;
+        const hasMoreAttempts = attempt < perKeyRetries;
         const hasNextKey = i < keys.length - 1;
         if (!hasMoreAttempts && !hasNextKey) throw e;
 

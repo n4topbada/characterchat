@@ -26,7 +26,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/api-utils";
 import { sseStream } from "@/lib/sse";
-import { MODELS, classifyUpstreamError } from "@/lib/gemini/client";
+import { MODELS, GEMINI_MODELS, classifyUpstreamError } from "@/lib/gemini/client";
 import {
   CASTER_SYSTEM,
   extractPatch,
@@ -217,6 +217,10 @@ export async function POST(
     try {
       for await (const ev of streamCaster({
         model: MODELS.chat,
+        // chat (gemini-3-flash-preview) 이 503 을 뱉으면 한 번만 chatFallback
+        // (gemini-3.1-flash-lite-preview) 으로 강등. 프리뷰 채널이 과부하에
+        // 자주 걸리는데 Caster 는 재시도 UI 가 어색하므로 서버에서 투명하게 흡수.
+        modelFallback: GEMINI_MODELS.chatFallback,
         systemInstruction,
         history,
         enableSearch: true,

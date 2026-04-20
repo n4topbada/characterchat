@@ -11,6 +11,23 @@
 import { HarmBlockThreshold, HarmCategory } from "@google/genai";
 import { withGeminiFallback } from "@/lib/gemini/client";
 
+/**
+ * 채팅 모델이 503 / Overloaded / 5xx 로 재시도 소진 시 한 번만 fallback 모델로 강등.
+ * streamChat 의 isOverloadedError 와 동일 규칙 — Caster 도 같은 정책을 쓴다.
+ *
+ * Caster 가 쓰는 기본 모델(gemini-3-flash-preview)은 프리뷰라 자주 503 를 뱉는다.
+ * withGeminiFallback 의 키당 3회 × 키 N개 재시도를 전부 소진한 뒤에만 여기로
+ * 들어오므로, "진짜 복구 안 되는 과부하" 상황에서만 강등된다.
+ */
+function isOverloadedError(e: unknown): boolean {
+  const anyE = e as { status?: number; code?: number; message?: string };
+  const status = anyE?.status ?? anyE?.code;
+  if (status === 503 || status === 429) return true;
+  if (typeof status === "number" && status >= 500 && status < 600) return true;
+  const msg = String(anyE?.message ?? e);
+  return /503|overload|unavailable|exhausted|quota/i.test(msg);
+}
+
 const PERMISSIVE_SAFETY = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -47,6 +64,13 @@ export type CasterStreamEvent =
 
 type Args = {
   model: string;
+  /**
+   * primary 가 503/과부하로 재시도 소진 시 한 번만 강등할 fallback 모델.
+   * 생략 시 강등 없이 primary 의 에러를 그대로 throw — 기존 동작과 동일.
+   * 프리뷰 모델(gemini-3-flash-preview)의 잦은 503 을 위해 보통
+   * `GEMINI_MODELS.chatFallback` (gemini-3.1-flash-lite-preview) 을 넘긴다.
+   */
+  modelFallback?: string;
   systemInstruction: string;
   history: CasterHistoryTurn[];
   /** 기본 true. 실존 참조가 필요 없으면 false 로 꺼서 일반 대화로. */
@@ -90,6 +114,9 @@ type StreamChunkLike = {
 export async function* streamCaster(
   args: Args,
 ): AsyncGenerator<CasterStreamEvent> {
+  console.log(
+    `[caster] streamCaster start: primary=${args.model} fallback=${args.modelFallback ?? "(none)"}`,
+  );
   const contents = args.history.map((turn) => ({
     role: turn.role === "model" ? "model" : "user",
     parts: turn.parts,
@@ -98,19 +125,54 @@ export async function* streamCaster(
   const tools =
     args.enableSearch === false ? undefined : [{ googleSearch: {} }];
 
-  const resp = await withGeminiFallback((ai) =>
-    ai.models.generateContentStream({
-      model: args.model,
-      contents,
-      config: {
-        systemInstruction: args.systemInstruction,
-        temperature: args.temperature ?? 1.5,
-        maxOutputTokens: args.maxOutputTokens ?? 2048,
-        safetySettings: PERMISSIVE_SAFETY,
-        ...(tools ? { tools } : {}),
-      },
-    }),
-  );
+  const buildConfig = () => ({
+    systemInstruction: args.systemInstruction,
+    temperature: args.temperature ?? 1.5,
+    maxOutputTokens: args.maxOutputTokens ?? 2048,
+    safetySettings: PERMISSIVE_SAFETY,
+    ...(tools ? { tools } : {}),
+  });
+
+  // 1) primary 로 시도 — withGeminiFallback 이 키당 N회 × 키 M개 재시도.
+  //    Caster 는 preview 모델(3-flash-preview)이 자주 503 이고 즉시 fallback 모델로
+  //    강등하는 게 합리적이므로 perKeyRetries=1 로 축소 (키당 2회). 그래야 양쪽
+  //    모델 모두 503 인 브로드 장애 때도 ~20~30초 안에 에러 배너가 뜬다.
+  //    (기본값 2 를 쓰면 키당 3회 × 2키 × 2모델 = 최대 12회 + backoff 로 3분 가까이 걸림)
+  const FAST_FAIL = { perKeyRetries: 1 };
+  let resp;
+  try {
+    resp = await withGeminiFallback(
+      (ai) =>
+        ai.models.generateContentStream({
+          model: args.model,
+          contents,
+          config: buildConfig(),
+        }),
+      FAST_FAIL,
+    );
+  } catch (e) {
+    // 2) 과부하(503/429/5xx) 로 재시도 소진 시 한 번만 modelFallback 으로 강등.
+    //    streamChat 과 동일 패턴. fallback 없으면 그냥 throw (기존 동작).
+    if (
+      !args.modelFallback ||
+      args.modelFallback === args.model ||
+      !isOverloadedError(e)
+    ) {
+      throw e;
+    }
+    console.warn(
+      `[caster] primary model ${args.model} exhausted (overloaded) — falling back to ${args.modelFallback}`,
+    );
+    resp = await withGeminiFallback(
+      (ai) =>
+        ai.models.generateContentStream({
+          model: args.modelFallback!,
+          contents,
+          config: buildConfig(),
+        }),
+      FAST_FAIL,
+    );
+  }
 
   // 같은 쿼리/URL 을 중복 emit 하지 않도록 누적
   const seenQueries = new Set<string>();
