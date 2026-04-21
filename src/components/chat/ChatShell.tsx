@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Search } from "lucide-react";
 import { MessageBubble, type ChatMessage } from "./MessageBubble";
@@ -10,7 +9,6 @@ import { StatusPanel } from "./StatusPanel";
 import { RoomBackdrop } from "./RoomBackdrop";
 import { SettingsMenuButton } from "./SettingsMenuButton";
 import { extractStatus } from "@/lib/narration";
-import { shouldBypassImageOptimizer } from "@/lib/assets/imageHint";
 
 const IMG_TAG_RE_CLIENT = /<img\s+[^>]*tags\s*=\s*"[^"]+"[^>]*\/?>/gi;
 function stripImageTagsClient(s: string): string {
@@ -283,13 +281,17 @@ export function ChatShell({
                 }}
               />
               {character.portraitUrl ? (
-                <Image
+                // next/image 옵티마이저 실패가 모바일에서 broken-image 로 고착되는
+                // 증상을 피하기 위해 채팅 헤더의 작은 포트레이트는 raw <img> 로 직송.
+                // 36x36 에 불과해 옵티마이저 이득이 없음.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
                   src={character.portraitUrl}
                   alt=""
                   width={36}
                   height={36}
+                  decoding="async"
                   className="relative w-full h-full object-cover"
-                  unoptimized={shouldBypassImageOptimizer(character.portraitUrl)}
                 />
               ) : null}
             </div>

@@ -1,7 +1,5 @@
 "use client";
-import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { shouldBypassImageOptimizer } from "@/lib/assets/imageHint";
 
 // 채팅방 뒤에 깔리는 "현재 분위기" 배경 레이어.
 //
@@ -12,6 +10,10 @@ import { shouldBypassImageOptimizer } from "@/lib/assets/imageHint";
 //   - url 이 null 이면 아무것도 렌더하지 않음 (상위에서 기존 패턴 bg 가 그대로 보이게).
 //
 // URL 이 연속해서 같은 값으로 오면 re-render/전환을 생략한다.
+//
+// 이미지 엘리먼트는 **next/image 가 아니라 raw <img>** 를 쓴다. 과거 next/image 옵티마이저
+// 실패 시 모바일 Safari 가 broken-image 아이콘을 캐시해 "그림이모지" 가 고착되는 증상이
+// 있었고, 배경은 이미 blur 로 뭉개지는 용도라 옵티마이저가 줄 이득이 거의 없다.
 
 type Props = {
   url: string | null;
@@ -76,15 +78,13 @@ export function RoomBackdrop({ url }: Props) {
     >
       {current && !currentErrored ? (
         <div className="absolute inset-0">
-          <Image
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src={current}
             alt=""
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover scale-110"
+            decoding="async"
+            className="w-full h-full object-cover scale-110"
             style={{ filter: "blur(24px) brightness(0.7) saturate(1.08)" }}
-            unoptimized={shouldBypassImageOptimizer(current)}
             onError={() => setCurrentErrored(true)}
           />
         </div>
@@ -95,15 +95,13 @@ export function RoomBackdrop({ url }: Props) {
           style={{ opacity: fading ? 1 : 0 }}
           onTransitionEnd={handleTransitionEnd}
         >
-          <Image
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src={next}
             alt=""
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover scale-110"
+            decoding="async"
+            className="w-full h-full object-cover scale-110"
             style={{ filter: "blur(24px) brightness(0.7) saturate(1.08)" }}
-            unoptimized={shouldBypassImageOptimizer(next)}
             onError={() => setNextErrored(true)}
           />
         </div>

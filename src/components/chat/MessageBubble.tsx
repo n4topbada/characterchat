@@ -1,9 +1,7 @@
-import Image from "next/image";
 import { useState } from "react";
 import { RotateCw } from "lucide-react";
 import { NarrationText } from "./NarrationSpan";
 import { extractStatus, splitDialogueBlocks } from "@/lib/narration";
-import { shouldBypassImageOptimizer } from "@/lib/assets/imageHint";
 
 export type ChatMessage = {
   id: string;
@@ -25,15 +23,23 @@ export type ChatMessage = {
 /**
  * 메시지 내 인라인 이미지.
  *
- * MessageBubble 은 서버 SSE `image` 이벤트로 받은 blob URL 을 그대로 렌더했는데,
- * next/image 의 `/_next/image` 옵티마이저가 dev cold-start 에서 실패하면 모바일
- * 브라우저가 "깨진 그림 아이콘(그림이모지)" 상태를 캐시해 버리는 증상이 재현된다.
+ * 과거 문제:
+ *   next/image 의 `/_next/image` 옵티마이저가 dev cold-start / 모바일 Safari
+ *   등에서 간헐적으로 실패하면 브라우저가 "깨진 그림 아이콘(그림이모지)"
+ *   상태를 캐시해 버려, 그 이후 정상 응답이 와도 해당 URL 엔 계속 broken-image
+ *   아이콘만 고착되는 증상이 재현된다.
  *
- * 대응:
- *   1) `/characters/*`, `/portraits/*`, `*.public.blob.vercel-storage.com` 등
- *      `shouldBypassImageOptimizer` 가 true 인 URL 은 `unoptimized` 로 직송한다.
- *   2) onError 가 뜨면 소스를 비우고 중립 gradient 타일로 교체 — broken-image
- *      아이콘이 고착되지 않도록.
+ * 결정 (v2):
+ *   인라인 메시지 이미지는 **옵티마이저를 아예 경유하지 않는다** — 업로드 파이프가
+ *   sharp 로 이미 webp 로 적정 해상도로 변환해 저장하므로 `/_next/image` 로
+ *   얻을 이득이 거의 없고, 반대로 실패 시 UX 손해(영구적 깨진 아이콘) 가 훨씬
+ *   크다. raw `<img>` 로 직접 서빙하면 원격(Blob) / 로컬(public) / 모든 경로가
+ *   동일하게 동작하고, 브라우저 기본 디코더만 타므로 고장 표면이 좁아진다.
+ *
+ * 추가 방어:
+ *   - onError 시 src 를 비우고 중립 gradient 타일로 즉시 대체 — 작은 사각 깨진
+ *     아이콘을 사용자에게 보여주지 않는다.
+ *   - 항상 바닥에 gradient 가 깔려 있어 로드 전 빈 영역도 노출되지 않는다.
  */
 function InlineMessageImage({
   url,
@@ -45,7 +51,6 @@ function InlineMessageImage({
   height: number;
 }) {
   const [errored, setErrored] = useState(false);
-  const unoptimized = shouldBypassImageOptimizer(url);
   return (
     <div
       className="relative mb-2 overflow-hidden rounded-md border border-outline-variant bg-surface-container-low"
@@ -61,14 +66,16 @@ function InlineMessageImage({
         }}
       />
       {!errored ? (
-        <Image
+        // 의도적으로 next/image 대신 raw <img>. 이유는 컴포넌트 docstring 참조.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
           src={url}
           alt=""
           width={width}
           height={height}
-          sizes="(max-width: 430px) 75vw, 320px"
+          loading="lazy"
+          decoding="async"
           className="relative w-full h-auto block"
-          unoptimized={unoptimized}
           onError={() => setErrored(true)}
         />
       ) : (
