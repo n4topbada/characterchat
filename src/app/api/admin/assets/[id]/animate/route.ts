@@ -42,8 +42,11 @@ import {
 } from "@/lib/animate/stream";
 
 export const dynamic = "force-dynamic";
-// Veo 폴링이 3~4분, ffmpeg 이 수 초. 여유 있게.
-export const maxDuration = 600;
+// Veo 폴링 3~4분 + ffmpeg 수 초 — 이상적으론 10분이지만 Vercel Hobby 한도가
+// 300초라 빌드 통과를 위해 300으로 고정. 어차피 Vercel serverless 에는 ffmpeg
+// 바이너리가 없어 이 라우트는 self-host / 로컬 dev 에서만 실제로 완주하므로
+// 운영 환경(self-host) 에서 더 긴 시간이 필요하면 platform 단에서 따로 오버라이드.
+export const maxDuration = 300;
 
 type BodyInput = {
   customPrompt?: string | null;
