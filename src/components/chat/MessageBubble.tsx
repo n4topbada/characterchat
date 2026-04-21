@@ -1,7 +1,9 @@
 import Image from "next/image";
+import { useState } from "react";
 import { RotateCw } from "lucide-react";
 import { NarrationText } from "./NarrationSpan";
 import { extractStatus, splitDialogueBlocks } from "@/lib/narration";
+import { shouldBypassImageOptimizer } from "@/lib/assets/imageHint";
 
 export type ChatMessage = {
   id: string;
@@ -19,6 +21,67 @@ export type ChatMessage = {
    *  실제 상태 코드가 들어간 문장을 그대로 노출한다. */
   errorText?: string;
 };
+
+/**
+ * 메시지 내 인라인 이미지.
+ *
+ * MessageBubble 은 서버 SSE `image` 이벤트로 받은 blob URL 을 그대로 렌더했는데,
+ * next/image 의 `/_next/image` 옵티마이저가 dev cold-start 에서 실패하면 모바일
+ * 브라우저가 "깨진 그림 아이콘(그림이모지)" 상태를 캐시해 버리는 증상이 재현된다.
+ *
+ * 대응:
+ *   1) `/characters/*`, `/portraits/*`, `*.public.blob.vercel-storage.com` 등
+ *      `shouldBypassImageOptimizer` 가 true 인 URL 은 `unoptimized` 로 직송한다.
+ *   2) onError 가 뜨면 소스를 비우고 중립 gradient 타일로 교체 — broken-image
+ *      아이콘이 고착되지 않도록.
+ */
+function InlineMessageImage({
+  url,
+  width,
+  height,
+}: {
+  url: string;
+  width: number;
+  height: number;
+}) {
+  const [errored, setErrored] = useState(false);
+  const unoptimized = shouldBypassImageOptimizer(url);
+  return (
+    <div
+      className="relative mb-2 overflow-hidden rounded-md border border-outline-variant bg-surface-container-low"
+      style={{ width: "min(320px, 75vw)" }}
+    >
+      {/* 로드 전/실패 시 깔리는 gradient fallback — "그림이모지" 대체용. */}
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          backgroundImage:
+            "linear-gradient(135deg, #3a5f94 0%, #a7c8ff 50%, #cee9d9 100%)",
+        }}
+      />
+      {!errored ? (
+        <Image
+          src={url}
+          alt=""
+          width={width}
+          height={height}
+          sizes="(max-width: 430px) 75vw, 320px"
+          className="relative w-full h-auto block"
+          unoptimized={unoptimized}
+          onError={() => setErrored(true)}
+        />
+      ) : (
+        // 비율 유지용 placeholder: width/height 비율대로 크기만 잡고 gradient 노출.
+        <div
+          aria-hidden
+          style={{ aspectRatio: `${width} / ${height}` }}
+          className="w-full"
+        />
+      )}
+    </div>
+  );
+}
 
 function formatTimestamp(v?: string | Date): string {
   if (!v) return "";
@@ -126,19 +189,11 @@ export function MessageBubble({
         </span>
       </div>
       {msg.image ? (
-        <div
-          className="relative mb-2 overflow-hidden rounded-md border border-outline-variant bg-surface-container-low"
-          style={{ width: "min(320px, 75vw)" }}
-        >
-          <Image
-            src={msg.image.url}
-            alt=""
-            width={msg.image.width}
-            height={msg.image.height}
-            sizes="(max-width: 430px) 75vw, 320px"
-            className="w-full h-auto block"
-          />
-        </div>
+        <InlineMessageImage
+          url={msg.image.url}
+          width={msg.image.width}
+          height={msg.image.height}
+        />
       ) : null}
       <div className="flex flex-col gap-2 w-full">
         {splitDialogueBlocks(body).map((block, i) => {

@@ -1,6 +1,7 @@
 "use client";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { shouldBypassImageOptimizer } from "@/lib/assets/imageHint";
 
 // 채팅방 뒤에 깔리는 "현재 분위기" 배경 레이어.
 //
@@ -20,6 +21,11 @@ export function RoomBackdrop({ url }: Props) {
   const [current, setCurrent] = useState<string | null>(url);
   const [next, setNext] = useState<string | null>(null);
   const [fading, setFading] = useState(false);
+  // 각 레이어별 onError 추적. next/image 옵티마이저 실패 시 broken-image 아이콘이
+  // 모바일에서 고착되는 증상이 있어, 에러나면 이미지 자체를 제거하고 아래
+  // diagonal/dot 배경이 그대로 보이게 한다.
+  const [currentErrored, setCurrentErrored] = useState(false);
+  const [nextErrored, setNextErrored] = useState(false);
   const lastSeen = useRef<string | null>(url);
 
   useEffect(() => {
@@ -29,6 +35,7 @@ export function RoomBackdrop({ url }: Props) {
     if (!current) {
       // 처음 URL 세팅 — 페이드 없이 바로 고정
       setCurrent(url);
+      setCurrentErrored(false);
       return;
     }
     if (!url) {
@@ -36,11 +43,14 @@ export function RoomBackdrop({ url }: Props) {
       setCurrent(null);
       setNext(null);
       setFading(false);
+      setCurrentErrored(false);
+      setNextErrored(false);
       return;
     }
 
     // 크로스페이드: next 에 새 URL 을 태우고 opacity 0→1.
     setNext(url);
+    setNextErrored(false);
     // 다음 프레임에 fading 켜서 transition 이 걸리게 함
     requestAnimationFrame(() => {
       requestAnimationFrame(() => setFading(true));
@@ -51,7 +61,9 @@ export function RoomBackdrop({ url }: Props) {
   const handleTransitionEnd = () => {
     if (!fading || !next) return;
     setCurrent(next);
+    setCurrentErrored(nextErrored);
     setNext(null);
+    setNextErrored(false);
     setFading(false);
   };
 
@@ -62,7 +74,7 @@ export function RoomBackdrop({ url }: Props) {
       aria-hidden
       className="pointer-events-none absolute inset-0 overflow-hidden"
     >
-      {current ? (
+      {current && !currentErrored ? (
         <div className="absolute inset-0">
           <Image
             src={current}
@@ -72,10 +84,12 @@ export function RoomBackdrop({ url }: Props) {
             sizes="100vw"
             className="object-cover scale-110"
             style={{ filter: "blur(24px) brightness(0.7) saturate(1.08)" }}
+            unoptimized={shouldBypassImageOptimizer(current)}
+            onError={() => setCurrentErrored(true)}
           />
         </div>
       ) : null}
-      {next ? (
+      {next && !nextErrored ? (
         <div
           className="absolute inset-0 transition-opacity duration-700 ease-out"
           style={{ opacity: fading ? 1 : 0 }}
@@ -89,6 +103,8 @@ export function RoomBackdrop({ url }: Props) {
             sizes="100vw"
             className="object-cover scale-110"
             style={{ filter: "blur(24px) brightness(0.7) saturate(1.08)" }}
+            unoptimized={shouldBypassImageOptimizer(next)}
+            onError={() => setNextErrored(true)}
           />
         </div>
       ) : null}
