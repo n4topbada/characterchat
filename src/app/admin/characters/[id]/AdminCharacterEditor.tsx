@@ -102,6 +102,42 @@ export function AdminCharacterEditor({
     router.refresh();
   }
 
+  // 캐릭터 전체 삭제. Cascade 로 config/personaCore/assets/sessions/messages/
+  // knowledge/eventTemplates/personaStates 가 전부 지워진다. 되돌릴 수 없다.
+  // 실수 방지를 위해 2단 confirm(경고 + 이름 타이핑) 후 실행.
+  const [deleting, setDeleting] = useState(false);
+  async function deleteCharacter() {
+    if (
+      !confirm(
+        `"${character.name}" (/${character.slug}) 를 정말 삭제하시겠습니까?\n\n` +
+          `이 캐릭터와 연결된 모든 세션/메시지/에셋/지식이 함께 삭제되며 되돌릴 수 없습니다.`,
+      )
+    )
+      return;
+    const typed = window.prompt(
+      `확인을 위해 캐릭터 이름을 그대로 입력하세요: ${character.name}`,
+    );
+    if (typed !== character.name) {
+      if (typed != null) alert("이름이 일치하지 않습니다. 취소되었습니다.");
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/characters/${character.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        alert("삭제 실패: " + (await res.text()));
+        setDeleting(false);
+        return;
+      }
+      router.push("/admin" as "/admin");
+    } catch (e) {
+      alert("삭제 실패: " + (e as Error).message);
+      setDeleting(false);
+    }
+  }
+
   return (
     <main className="min-h-full bg-slate-50 text-slate-800">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
@@ -143,6 +179,19 @@ export function AdminCharacterEditor({
           >
             <Save size={12} />
             {save.isPending ? "저장 중..." : "저장"}
+          </button>
+          {/* 캐릭터 삭제. 2단 확인(confirm + 이름 타이핑) 이 걸려 있어 오클릭
+              으로 날아가지는 않지만 그래도 header 에서 눈에 너무 띄지 않게
+              rose 배경만 살짝 — "위험 동작은 어두운 구석에" 원칙. */}
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={deleteCharacter}
+            aria-label="캐릭터 삭제"
+            className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-2 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+          >
+            <Trash2 size={12} />
+            {deleting ? "삭제 중..." : "삭제"}
           </button>
         </div>
         <nav className="flex gap-1 px-4 pb-2">

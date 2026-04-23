@@ -44,9 +44,12 @@ export default async function AdminHome() {
           </div>
           <div className="space-y-3">
             {characters.map((c) => (
-              <div
+              // 카드 전체 클릭 → 편집 화면. 편집 화면 헤더에 삭제 버튼 있음.
+              // 그 전엔 div 라 클릭 불가였고 admin 이 편집/삭제에 도달할 경로가 없었다.
+              <Link
                 key={c.id}
-                className="bg-surface-container-lowest rounded-lg p-4 shadow-card"
+                href={{ pathname: `/admin/characters/${c.id}` }}
+                className="block bg-surface-container-lowest rounded-lg p-4 shadow-card hover:bg-surface-container-low active:scale-[0.99] transition-transform"
               >
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
@@ -69,7 +72,7 @@ export default async function AdminHome() {
                     {c.isPublic ? "Public" : "Draft"}
                   </span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </section>
