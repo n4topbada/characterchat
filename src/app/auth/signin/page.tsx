@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SignInButtons } from "./SignInButtons";
 import { School } from "lucide-react";
+import { DEV_LOGIN_ENABLED } from "@/lib/auth";
 
 export default async function SignInPage({
   searchParams,
@@ -8,7 +9,10 @@ export default async function SignInPage({
   searchParams: Promise<{ callbackUrl?: string }>;
 }) {
   const { callbackUrl } = await searchParams;
-  const isDev = process.env.NODE_ENV === "development";
+  // Dev 로그인 버튼은 dev-login provider 가 실제로 등록된 환경에서만 띄운다.
+  // 그 가드는 src/lib/auth.ts 에 중앙화(DEV_LOGIN_ENABLED) 되어 있고,
+  // VERCEL_ENV 까지 확인해서 prod/preview 배포에선 자동으로 숨겨진다.
+  const isDev = DEV_LOGIN_ENABLED;
 
   return (
     <main className="min-h-dvh bg-surface flex flex-col items-center justify-center px-6 relative overflow-hidden">

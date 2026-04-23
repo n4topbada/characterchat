@@ -17,16 +17,9 @@ export async function DELETE(
   const asset = await prisma.asset.findUnique({ where: { id } });
   if (!asset) return errorJson("not found", 404);
 
-  // 로컬 정적 경로(`/portraits/...`)이면 실제 파일도 제거
-  if (asset.blobUrl.startsWith("/")) {
-    const abs = path.resolve(
-      process.cwd(),
-      "public",
-      asset.blobUrl.replace(/^\/+/, ""),
-    );
-    await fs.unlink(abs).catch(() => void 0);
-  }
-
+  // 순서 중요: DB 트랜잭션을 먼저 커밋해서 "DB 는 지워졌는데 파일은 남음"
+  // 만 발생하게 한다. 반대로 하면 "파일은 지웠는데 DB 에 blobUrl 이 남아
+  // 유저가 404 를 받는" 최악의 시나리오가 된다.
   await prisma.$transaction(async (tx) => {
     await tx.character.updateMany({
       where: { portraitAssetId: id },
@@ -38,6 +31,16 @@ export async function DELETE(
     });
     await tx.asset.delete({ where: { id } });
   });
+
+  // DB 커밋 후에 로컬 정적 파일 cleanup. 실패해도 DB 는 이미 일관 상태.
+  if (asset.blobUrl.startsWith("/")) {
+    const abs = path.resolve(
+      process.cwd(),
+      "public",
+      asset.blobUrl.replace(/^\/+/, ""),
+    );
+    await fs.unlink(abs).catch(() => void 0);
+  }
 
   return NextResponse.json({ ok: true });
 }

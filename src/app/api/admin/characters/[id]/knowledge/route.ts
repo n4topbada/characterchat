@@ -90,43 +90,54 @@ export async function POST(
   });
 
   const docId = newId();
-  await prisma.knowledgeDoc.create({
-    data: {
-      id: docId,
-      characterId: id,
-      title: parsed.data.title,
-      source: parsed.data.source,
-      rawText: parsed.data.rawText,
-      sourceUrls: parsed.data.sourceUrls ?? [],
-    },
-  });
+  // embedTexts() 는 이미 트랜잭션 밖에서 끝났다(외부 API, 수 초 소요). 이제
+  // 이 아래를 한 트랜잭션으로 묶어서 "doc 만 남고 chunk 없음" 또는 "chunk 는
+  // 일부만 생김" 같은 partial write 를 방지한다.
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.knowledgeDoc.create({
+        data: {
+          id: docId,
+          characterId: id,
+          title: parsed.data.title,
+          source: parsed.data.source,
+          rawText: parsed.data.rawText,
+          sourceUrls: parsed.data.sourceUrls ?? [],
+        },
+      });
 
-  for (let i = 0; i < chunksText.length; i++) {
-    const content = chunksText[i];
-    const chunkId = newId();
-    await prisma.knowledgeChunk.create({
-      data: {
-        id: chunkId,
-        docId,
-        characterId: id,
-        type: parsed.data.type,
-        ordinal: i,
-        content,
-        tokens: estimateTokens(content),
-        metadata: parsed.data.sourceUrls?.length
-          ? { sourceUrls: parsed.data.sourceUrls }
-          : undefined,
-      },
+      for (let i = 0; i < chunksText.length; i++) {
+        const content = chunksText[i];
+        const chunkId = newId();
+        await tx.knowledgeChunk.create({
+          data: {
+            id: chunkId,
+            docId,
+            characterId: id,
+            type: parsed.data.type,
+            ordinal: i,
+            content,
+            tokens: estimateTokens(content),
+            metadata: parsed.data.sourceUrls?.length
+              ? { sourceUrls: parsed.data.sourceUrls }
+              : undefined,
+          },
+        });
+        // embedding 컬럼은 raw SQL 로 업데이트. tx.$executeRawUnsafe 라 같은
+        // 트랜잭션 안에서 처리된다.
+        if (vectors && vectors[i]) {
+          const lit = toVectorLiteral(vectors[i].vector);
+          await tx.$executeRawUnsafe(
+            `UPDATE "KnowledgeChunk" SET embedding = $1::vector WHERE id = $2`,
+            lit,
+            chunkId,
+          );
+        }
+      }
     });
-    // embedding 컬럼은 raw SQL 로 업데이트
-    if (vectors && vectors[i]) {
-      const lit = toVectorLiteral(vectors[i].vector);
-      await prisma.$executeRawUnsafe(
-        `UPDATE "KnowledgeChunk" SET embedding = $1::vector WHERE id = $2`,
-        lit,
-        chunkId,
-      );
-    }
+  } catch (e) {
+    console.error("[knowledge POST] transaction failed", e);
+    return errorJson("persist_failed", 500);
   }
 
   return NextResponse.json({
