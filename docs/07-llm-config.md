@@ -6,8 +6,8 @@
 
 ```ts
 export const GEMINI_MODELS = {
-  chat:         "gemini-3-flash-preview",
-  chatFallback: "gemini-3.1-flash-lite-preview",
+  chat:         "gemini-flash-latest",
+  chatFallback: "gemini-3-flash-preview",
   pro:          "gemini-3.1-pro-preview",
   image:        "gemini-3.1-flash-image-preview",
   embed:        "text-embedding-004",
@@ -16,8 +16,8 @@ export const GEMINI_MODELS = {
 
 | key | 실제 ID | 용도 |
 |---|---|---|
-| `chat` | `gemini-3-flash-preview` | 기본 채팅 (캐릭터 응답, Caster 대화) |
-| `chatFallback` | `gemini-3.1-flash-lite-preview` | `chat` 모델이 503/과부하로 재시도 소진 시 **한 번만** 강등되는 경로 |
+| `chat` | `gemini-flash-latest` | 기본 채팅 (캐릭터 응답, Caster 대화) |
+| `chatFallback` | `gemini-3-flash-preview` | `chat` 모델이 503/과부하로 재시도 소진 시 **한 번만** 강등되는 경로 |
 | `pro` | `gemini-3.1-pro-preview` | 고난이도 추론·계획·롱폼 (`thinkingConfig.thinkingLevel = MEDIUM` 권장). Caster research/knowledge 합성 등에 사용 |
 | `image` | `gemini-3.1-flash-image-preview` | 포트레이트/갤러리 이미지 생성. `responseModalities: ['IMAGE','TEXT']` + `imageConfig` 필요 |
 | `embed` | `text-embedding-004` | KnowledgeChunk 벡터 임베딩 (768d) |

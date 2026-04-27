@@ -22,8 +22,8 @@
  * 정책 전문: docs/07-llm-config.md §0.
  */
 export const GEMINI_MODELS = {
-  chat:         "gemini-3-flash-preview",
-  chatFallback: "gemini-3.1-flash-lite-preview",
+  chat:         "gemini-flash-latest",
+  chatFallback: "gemini-3-flash-preview",
   pro:          "gemini-3.1-pro-preview",
   image:        "gemini-3.1-flash-image-preview",
   embed:        "text-embedding-004",
