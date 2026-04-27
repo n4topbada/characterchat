@@ -105,7 +105,7 @@ export async function* streamChat(args: StreamArgs) {
     temperature: args.temperature ?? 0.8,
     topP: args.topP ?? undefined,
     topK: args.topK ?? undefined,
-    maxOutputTokens: args.maxOutputTokens ?? 1024,
+    maxOutputTokens: args.maxOutputTokens ?? 8192,
     safetySettings: PERMISSIVE_SAFETY,
   });
 

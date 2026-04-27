@@ -65,7 +65,7 @@ export const GEMINI_MODELS = {
 | temperature | float | O | `0.8` | 0.0 ~ 2.0 | 낮을수록 결정적. 캐릭터 개성을 살릴 때 0.7~1.0. 서사가 단조로우면 1.0~1.2 까지. |
 | topP | float | X | null | 0.0 ~ 1.0 | nucleus sampling. null 이면 모델 기본값. |
 | topK | int | X | null | 1 ~ 40 | 토큰 후보 상한. |
-| maxOutputTokens | int | O | `1024` | 128 ~ 8192 | 한 응답 최대 길이. 상태창 포함 시 ≥ 768 권장. |
+| maxOutputTokens | int | O | `4096` | 128 ~ 8192 | 한 응답 최대 길이. 상태창 포함 시 ≥ 768 권장. |
 | greeting | text | O | — | ≤ 500자 | 세션 생성 직후 자동 system 메시지로 삽입(캐릭터의 첫 대사). |
 | statusPanelSchema | json | X | null | `{ mood:'string', ... }` | 상태창 필드 정의. null 이면 상태창 비활성. |
 | safetyJson | json | X | null | Gemini SafetySetting[] | 기본: 4카테고리 BLOCK_MEDIUM. |
