@@ -137,10 +137,10 @@ const stream = genai.models.generateContentStream({
 ### DEFAULT_SAFETY
 ```ts
 export const DEFAULT_SAFETY = [
-  { category: "HARM_CATEGORY_HARASSMENT",        threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-  { category: "HARM_CATEGORY_HATE_SPEECH",       threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+  { category: "HARM_CATEGORY_HARASSMENT",        threshold: "NONE" },
+  { category: "HARM_CATEGORY_HATE_SPEECH",       threshold: "NONE" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "NONE" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "NONE" },
 ];
 ```
 
@@ -157,7 +157,6 @@ export const DEFAULT_SAFETY = [
 - 서버는 항상 재검증 후 persist.
 
 ## 6. 주의
-- `maxOutputTokens` 가 너무 작으면 상태창이 잘린다. 권장 ≥ 512 (상태창 ON 이면 ≥ 768).
-- `safetySettings` 를 낮추면 유해 응답 가능성 증가. 감사(audit) 기능은 M5.
+- `maxOutputTokens` 가 너무 작으면 상태창이 잘린다. 권장 ≥ 8192 (상태창 ON 이면 ≥ 768).
 - 모델 ID 는 **§0 카탈로그** 만 쓴다. 하위 버전(2.x/1.x) 금지. 상향은 카탈로그 한 줄 변경으로 일괄 반영한다. 개별 `CharacterConfig.model` 이 카탈로그 밖 값으로 남아 있어도 `normalizeModel()` 이 `GEMINI_MODELS.chat` 으로 교정한다.
 - 페르소나를 갱신하려면 `PersonaCore` 를 편집(admin UI)하거나 **Caster 재-commit** — 더이상 systemPrompt 를 건드리지 않는다.

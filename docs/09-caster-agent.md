@@ -20,7 +20,7 @@ Caster는 **페르소나가 없는 디자이너 에이전트**다. 사용자(관
 | 모델 | `gemini-3-flash-preview` ([07-llm-config §0](07-llm-config.md#0-모델-고정-정책-️-do-not-touch)) | 빠른 리서치 루프 + 도구 호출 지원 |
 | temperature | `1.5` | 아이디에이션 다양성 확보 (사용자 요구) |
 | topP | 0.95 | 기본 |
-| maxOutputTokens | 2048 | 한 턴 응답 여유 |
+| maxOutputTokens | 8192 | 한 턴 응답 여유 |
 | 웹검색 | **활성** (Google Search grounding 또는 `web_search` 툴) | 실존 인물/작품 리서치 필수 |
 | 이미지 생성 | `gemini-3.1-flash-image-preview` | 포트레이트 |
 | 임베딩 | `text-embedding-004` | 지식 청크 |
