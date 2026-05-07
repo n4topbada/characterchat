@@ -8,10 +8,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin, errorJson } from "@/lib/api-utils";
 import { MODELS, withGeminiFallback } from "@/lib/gemini/client";
+import { PERMISSIVE_SAFETY } from "@/lib/gemini/safety";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const Body = z.object({
   topic: z.string().trim().min(2).max(200),
@@ -61,6 +62,9 @@ export async function POST(
       config: {
         temperature: 0.3,
         tools: [{ googleSearch: {} } as unknown as never],
+        // 성인 페르소나의 배경을 조사할 때 토픽이 safety 에 걸리면 빈 응답이
+        // 내려와 "조사 실패" 로 끝난다. 다른 generative 호출과 동일 정책.
+        safetySettings: PERMISSIVE_SAFETY,
       },
     });
     const textOut = resp.text ?? "";

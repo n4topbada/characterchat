@@ -11,7 +11,7 @@ import { splitToChunks, estimateTokens } from "@/lib/rag/chunk";
 import { embedTexts, toVectorLiteral } from "@/lib/rag/embed";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const PostBody = z.object({
   title: z.string().trim().min(1).max(200),

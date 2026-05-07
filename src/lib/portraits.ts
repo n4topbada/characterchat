@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { ulid } from "ulid";
 import { prisma } from "@/lib/db";
 import { MODELS, withGeminiFallback } from "@/lib/gemini/client";
+import { PERMISSIVE_SAFETY } from "@/lib/gemini/safety";
 import { putAsset } from "@/lib/assets/blob";
 import type { PersonaCore, Character } from "@prisma/client";
 
@@ -60,6 +61,9 @@ export async function generatePortraitBytes(prompt: string): Promise<{
       config: {
         imageConfig: { aspectRatio: "3:4", imageSize: "1K" },
         responseModalities: ["IMAGE"],
+        // 성인 페르소나(노출/관능 묘사) 가 들어가면 기본 safety 가 0-byte 응답을
+        // 만든다. 4개 카테고리 모두 BLOCK_NONE — 차단은 persona redLines 에서.
+        safetySettings: PERMISSIVE_SAFETY,
       } as Record<string, unknown>,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });

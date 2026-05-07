@@ -86,6 +86,7 @@ type Scene =
   | "nude"
   | "underwear"
   | "naked"
+  | "shirt"
   | "sex_bg";
 type Expression =
   | "neutral"
@@ -113,8 +114,32 @@ const SCENE_MAP: Record<
   nude: { sceneTag: "nude", clothingTag: "naked", baseNsfw: 1, locationFit: ["bedroom", "home"] },
   underwear: { sceneTag: "underwear", clothingTag: "underwear", baseNsfw: 2, locationFit: ["bedroom", "home"] },
   naked: { sceneTag: "naked", clothingTag: "naked", baseNsfw: 2, locationFit: ["bedroom", "home"] },
+  // 셔츠만 입은 partial 노출 — char0005 의 sex_shirt 시리즈 대응. dress 와 naked
+  // 사이의 중간 단계.
+  shirt: { sceneTag: "partial", clothingTag: "partial", baseNsfw: 1, locationFit: ["bedroom", "home"] },
   sex_bg: { sceneTag: "sex_bg", clothingTag: "naked", baseNsfw: 3, locationFit: ["bedroom", "home"] },
 };
+
+// sex_<outfit> 의 sceneTag 는 "sex_<outfit>" (예: "sex_naked", "sex_underwear",
+// "sex_home"). pickAsset 의 prefix 매칭(`startsWith("sex")`)이 정상 동작하므로
+// "sex" 토큰 한 방에 모두 +12 보너스를 받는다.
+function sexSceneFor(outfit: string): {
+  sceneTag: string;
+  clothingTag: string;
+  baseNsfw: 3;
+} {
+  const map: Record<string, string> = {
+    naked: "naked",
+    nude: "naked",
+    underwear: "underwear",
+    shirt: "partial",
+    home: "dressed",
+    daily: "dressed",
+    work: "dressed",
+  };
+  const ct = map[outfit] ?? "dressed";
+  return { sceneTag: `sex_${outfit}`, clothingTag: ct, baseNsfw: 3 };
+}
 
 const EXPR_MAP: Record<
   Expression,
@@ -130,10 +155,19 @@ const EXPR_MAP: Record<
 };
 
 // ── 파일명 파서 ─────────────────────────────────────────────────────
-// 포트레이트/갤러리(표준): char0002_home_aroused_sfw_0072.png
+// 포트레이트/갤러리(표준 5-token): char0002_home_aroused_sfw_0072.png
 const FG_RE =
-  /^char\d{2,4}_(home|daily|work|gym|sleep|nude|underwear|naked)_(neutral|happy|angry|sad|embarrassed|aroused|daily)_(sfw|nsfw)_(\d{4})\.png$/;
-// sex_bg 는 expression 슬롯이 없다: char0003_sex_bg_nsfw_0150.png
+  /^char\d{2,4}_(home|daily|work|gym|sleep|nude|underwear|naked|shirt)_(neutral|happy|angry|sad|embarrassed|aroused|daily)_(sfw|nsfw)_(\d{4})\.png$/;
+// 6-token 변형 — bas section: char0004_bas_naked_aroused_nsfw_0091.png
+//   bas 는 "기본 컷" 의 의미라 outfit 슬롯이 scene 으로, emotion 슬롯이 expression
+//   으로 쓰인다.
+const BAS_RE =
+  /^char\d{2,4}_bas_(home|daily|work|gym|sleep|nude|underwear|naked|shirt|hoem)_(neutral|happy|angry|sad|embarrassed|aroused|daily)_(sfw|nsfw)_(\d{4})\.png$/;
+// 6-token sex section: char0004_sex_naked_classroom_nsfw_0137.png
+//   sex_<outfit>_<location>. sceneTag="sex_<outfit>" 로 prefix 매칭.
+const SEX_NEW_RE =
+  /^char\d{2,4}_sex_(home|daily|work|naked|nude|underwear|shirt)_([a-z][a-z0-9]*)_(sfw|nsfw)_(\d{4})\.png$/;
+// 레거시 sex_bg (Mira/seo-ah-jin 시드용): char0003_sex_bg_nsfw_0150.png
 const SEX_BG_RE = /^char\d{2,4}_sex_bg_(sfw|nsfw)_(\d{4})\.png$/;
 // 배경: char0003_bg_bedroom1_0014.png
 const BG_RE = /^char\d{2,4}_bg_([a-z0-9_-]+?)_(\d{4})\.png$/;
@@ -161,11 +195,12 @@ type Classified =
   | null;
 
 function classify(filename: string): Classified {
+  // 1) 5-token: char####_<scene>_<expr>_<sfw>_####
   const fg = FG_RE.exec(filename);
   if (fg) {
     const scene = fg[1] as Scene;
     const expression = fg[2] as Expression;
-    const nsfw = fg[3]; // sfw | nsfw — 참고용, 레벨은 scene + tag 로 결정
+    const nsfw = fg[3];
     const ordinal = parseInt(fg[4], 10);
     const s = SCENE_MAP[scene];
     const e = EXPR_MAP[expression];
@@ -188,13 +223,64 @@ function classify(filename: string): Classified {
       description: `${scene} · ${expression}`,
     };
   }
-  // sex_bg: expression 슬롯 없음. scene 자체가 행위 중. 기본 expression 은
-  // 'seductive', mood 는 'horny/teasing' 으로 고정.
+  // 2) 6-token bas: char####_bas_<outfit>_<emotion>_<sfw>_####
+  const bas = BAS_RE.exec(filename);
+  if (bas) {
+    let outfit = bas[1];
+    if (outfit === "hoem") outfit = "home"; // 소스 측 오타 흡수
+    const expression = bas[2] as Expression;
+    const nsfw = bas[3];
+    const ordinal = parseInt(bas[4], 10);
+    const s = SCENE_MAP[outfit as Scene];
+    const e = EXPR_MAP[expression];
+    const levelFromScene = s.baseNsfw;
+    const levelFromTag =
+      nsfw === "nsfw" ? Math.max(2, levelFromScene) : levelFromScene;
+    const level = Math.min(NSFW_CAP, levelFromTag);
+    return {
+      kind: "gallery",
+      scene: outfit as Scene,
+      expression,
+      ordinal,
+      sceneTag: s.sceneTag,
+      clothingTag: s.clothingTag,
+      nsfwLevel: level,
+      exprStr: e.expression,
+      moodFit: e.moodFit,
+      locationFit: s.locationFit,
+      triggerTags: ["bas", outfit, expression],
+      description: `bas · ${outfit} · ${expression}`,
+    };
+  }
+  // 3) 6-token sex: char####_sex_<outfit>_<location>_<sfw>_####
+  const sxn = SEX_NEW_RE.exec(filename);
+  if (sxn) {
+    const outfit = sxn[1];
+    const location = sxn[2];
+    const ordinal = parseInt(sxn[4], 10);
+    const sx = sexSceneFor(outfit);
+    const level = Math.min(NSFW_CAP, sx.baseNsfw) as 0 | 1 | 2 | 3;
+    return {
+      kind: "gallery",
+      scene: outfit as Scene,
+      expression: "aroused",
+      ordinal,
+      sceneTag: sx.sceneTag,
+      clothingTag: sx.clothingTag,
+      nsfwLevel: level,
+      exprStr: "seductive",
+      moodFit: ["horny", "teasing", "aroused"],
+      locationFit: [location, "bedroom", "home"],
+      triggerTags: ["sex", outfit, location],
+      description: `sex · ${outfit} · ${location}`,
+    };
+  }
+  // 4) 레거시 sex_bg
   const sx = SEX_BG_RE.exec(filename);
   if (sx) {
     const ordinal = parseInt(sx[2], 10);
     const s = SCENE_MAP.sex_bg;
-    const level = Math.min(NSFW_CAP, 3);
+    const level = Math.min(NSFW_CAP, 3) as 0 | 1 | 2 | 3;
     return {
       kind: "gallery",
       scene: "sex_bg",
@@ -210,6 +296,7 @@ function classify(filename: string): Classified {
       description: "sex_bg",
     };
   }
+  // 5) 배경
   const bg = BG_RE.exec(filename);
   if (bg) {
     return {
@@ -330,22 +417,23 @@ async function main() {
     const isPortrait = file === PORTRAIT;
     const { body, width, height } = await processImage(bytes, isPortrait);
 
+    // Blob key 정책 통일 — docs/11-assets.md §4 참조.
+    //   characters/<slug>/portrait.webp                      (대표, 고정 키)
+    //   characters/<slug>/gallery/<assetId>.webp             (갤러리, ULID)
+    //   characters/<slug>/background/<assetId>.webp          (배경, ULID, 단수형)
+    // ULID 키는 SFW/NSFW/장면을 URL 에 노출하지 않으며, DB 와 1:1 매핑되므로
+    // orphan 청소가 단순하다.
+    const assetId = ulid();
     let relPath: string;
     if (isPortrait) {
       relPath = `characters/${SLUG}/portrait.webp`;
     } else if (tag!.kind === "background") {
-      relPath = `characters/${SLUG}/backgrounds/${tag!.location}_${String(
-        tag!.ordinal,
-      ).padStart(4, "0")}.webp`;
+      relPath = `characters/${SLUG}/background/${assetId}.webp`;
     } else {
-      relPath = `characters/${SLUG}/gallery/${tag!.scene}_${tag!.expression}_${String(
-        tag!.ordinal,
-      ).padStart(4, "0")}.webp`;
+      relPath = `characters/${SLUG}/gallery/${assetId}.webp`;
     }
 
     const url = await uploadBlob(relPath, body, token);
-
-    const assetId = ulid();
     const kind = isPortrait
       ? "portrait"
       : tag!.kind === "background"
@@ -355,7 +443,9 @@ async function main() {
     if (tag!.kind === "gallery" || isPortrait) {
       // 파일이 portrait 인 경우라도 원래 파일명의 tag (gallery 계열) 을 유지해
       // sceneTag / expression 을 채운다. portrait 로 쓰이지만 매칭에도 쓰일 수 있다.
-      const gt = tag!.kind === "gallery" ? tag! : (classify(file) as any);
+      const gt = tag!.kind === "gallery"
+        ? tag!
+        : (classify(file) as Extract<Classified, { kind: "gallery" }>);
       await prisma.asset.create({
         data: {
           id: assetId,

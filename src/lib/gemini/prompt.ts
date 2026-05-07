@@ -271,13 +271,26 @@ function formatBlock(statusPanelSchema?: unknown | null): string {
     "- 지어낸 사실은 쓰지 않는다. 모르는 주제는 말 돌리기로 자연스럽게 피한다.",
   ];
   if (statusPanelSchema) {
+    // schema 에 scene 이 빠져 있어도 LLM 이 스스로 추가하도록 강제. 서버는
+    // <status> 의 모든 키를 statusToTokens 로 흡수하므로 스키마 외 키도 그대로
+    // 받아들인다. scene 토큰이 빠지면 pickAsset 의 sex_* prefix 보너스가 발화
+    // 못 하므로 naked → sex 전환이 고장 났다 (2026-05 사건).
+    const schemaWithScene = (() => {
+      try {
+        const obj = JSON.parse(JSON.stringify(statusPanelSchema)) as Record<string, unknown>;
+        if (typeof obj === "object" && obj && !("scene" in obj)) obj.scene = "home";
+        return obj;
+      } catch {
+        return statusPanelSchema;
+      }
+    })();
     lines.push(
-      `- 응답 말미에 상태창 블록을 둔다: <status>${JSON.stringify(statusPanelSchema)}</status>  (키 순서 유지)`,
+      `- 응답 말미에 상태창 블록을 둔다: <status>${JSON.stringify(schemaWithScene)}</status>  (키 순서 유지)`,
       "- 상태창의 mood/outfit/location/scene 은 **매 턴 장면에 맞게 갱신**한다. 같은 값을 반복하지 말 것.",
       "  · mood 어휘 예시: calm, shy, playful, affectionate, aroused, flustered, sulky, happy, sad, tense, tender, focused, sleepy, surprised, embarrassed",
       "  · outfit 어휘 예시: casual, pajamas, towel, underwear, naked, partial, swimwear, formal",
       "  · location 은 장면이 벌어지는 실제 공간(bedroom, bathroom, kitchen, living_room, outside 등)을 정확히 반영",
-      "  · scene 은 현재 상황 타입을 한 단어로 — home, bath, sleep, kiss, hug, sex, outdoor 등. 스키마에 scene 키가 없으면 생략 가능.",
+      "  · scene 은 현재 상황 타입을 한 단어로 — home, bath, sleep, kiss, hug, sex, outdoor. 키스나 그 이상의 친밀 단계로 들어가면 반드시 갱신할 것 (기본 home 으로 고정 금지).",
       "  · horny/affection/energy 수치는 장면 강도에 따라 실제로 움직일 것. 평형 상태에 고정해 두지 말 것.",
     );
   }

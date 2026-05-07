@@ -8,8 +8,8 @@
 // 턴에서 빈 응답을 유발한다. Caster 는 관리자 전용 설계 도구이므로 차단은
 // persona redLines + [금지] 블록에서 한다.
 
-import { HarmBlockThreshold, HarmCategory } from "@google/genai";
 import { withGeminiFallback } from "@/lib/gemini/client";
+import { PERMISSIVE_SAFETY } from "@/lib/gemini/safety";
 
 /**
  * 채팅 모델이 503 / Overloaded / 5xx 로 재시도 소진 시 한 번만 fallback 모델로 강등.
@@ -27,13 +27,6 @@ function isOverloadedError(e: unknown): boolean {
   const msg = String(anyE?.message ?? e);
   return /503|overload|unavailable|exhausted|quota/i.test(msg);
 }
-
-const PERMISSIVE_SAFETY = [
-  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-];
 
 // 멀티모달 대응 — 턴은 parts 배열로 구성된다 (텍스트 + 인라인 이미지).
 export type CasterContentPart =

@@ -24,6 +24,7 @@
 
 import { ThinkingLevel } from "@google/genai";
 import { GEMINI_MODELS, withGeminiFallback } from "@/lib/gemini/client";
+import { PERMISSIVE_SAFETY } from "@/lib/gemini/safety";
 import type { PersonaCore, Character } from "@prisma/client";
 
 /** Caster 대화에서 뽑을 수 있는 외형 관련 인용 목록 상한. */
@@ -232,6 +233,9 @@ export async function* streamPortrait(
               personGeneration: "",
             },
             responseModalities: ["IMAGE"],
+            // 4개 카테고리 BLOCK_NONE — 위 주석에 적힌 "0-byte safety 블록"
+            // 의 직접 원인이었다. 모든 generative 호출은 동일 정책.
+            safetySettings: PERMISSIVE_SAFETY,
           } as Record<string, unknown>,
         }),
       { perKeyRetries: 1 },

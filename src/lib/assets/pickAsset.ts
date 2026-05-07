@@ -2,14 +2,20 @@
 // 서버가 이 모듈로 가장 적합한 Asset 을 골라 SSE 로 전송한다.
 //
 // 스코어링:
-//   clothingTag 일치      +10
-//   sceneTag 일치         +5
-//   expression 일치       +4
-//   moodFit 교집합 한 건   +3
-//   locationFit 교집합     +2
-//   triggerTags 교집합     +2
-//   NSFW 가드: 캐릭터 nsfwEnabled=false 이면 nsfwLevel>0 는 제외.
-//              horny 상태값이 낮으면 nsfwLevel=3 페널티(-8), nsfwLevel=2 페널티(-3)
+//   clothingTag 일치           +10
+//   sceneTag 정확 일치          +5
+//   sceneTag prefix("sex_*")    +12  ← "sex" 토큰이 있을 때만, naked 단계에서
+//                                     스왑이 안 되던 버그(5 vs 10) 해결
+//   expression 일치            +4
+//   moodFit 교집합 한 건        +3
+//   locationFit 교집합          +2
+//   triggerTags 교집합          +2
+//   NSFW 가드:
+//     - nsfwEnabled=false 면 nsfwLevel>0 자산 제외
+//     - "sex" 의도가 명시(토큰 또는 본문)되면 nsfwLevel=2/3 페널티는 면제
+//       (LLM 이 사용자에게 동의 후 진입한 장면에 horny 누적 못 따라가서 그림이
+//        도태되는 현상이 있었다)
+//     - 의도 없을 땐 horny<40 이면 nsfwLevel=3 페널티(-8), horny<20 이면 lvl=2(-3)
 
 import type { Asset } from "@prisma/client";
 
@@ -149,6 +155,11 @@ const SYNONYMS: Record<string, string[]> = {
   tender: ["loving", "affectionate"],
   sleepy: ["tired"],
   surprised: ["startled"],
+  // 카탈로그에 따라 sceneTag 가 "naked" / "nude" 로 갈리는데(scoreAsset 이
+  // expanded.includes(sceneTag) 로만 매칭) 둘이 동의어로 잡히지 않으면 캐릭터
+  // 별로 +5 보너스가 누락된다.
+  naked: ["nude"],
+  nude: ["naked"],
 };
 
 function expandTokens(tokens: string[]): string[] {
@@ -169,6 +180,10 @@ export function scoreAsset(
   if (!ctx.nsfwEnabled && asset.nsfwLevel > 0) return -Infinity;
 
   const expanded = expandTokens(tokens);
+  // "지금 sex 장면이다" 가 명시됐는가 — token bag 또는 본문 키워드(spotBodyTokens
+  // 가 'sex' 를 추가) 로 들어온다. 이 깃발이 켜지면 horny 수치가 낮아도 NSFW
+  // 페널티를 면제한다 (전환 직전 LLM 이 horny 30~40 으로 머무는 케이스 보호).
+  const sexIntent = expanded.includes("sex");
   let score = 0;
 
   // 1) clothing — 의도 불일치 페널티는 약하게(-1). 장면 전환 중 underwear/partial 도
@@ -181,11 +196,15 @@ export function scoreAsset(
     else score -= 1;
   }
 
-  // 2) sceneTag — exact 매칭, 그리고 "sex" 토큰은 "sex_*" prefix 모두에 보너스.
-  //    (asset sceneTag 는 sex_a/sex_b 로 세분화돼 있지만 토큰 쪽은 "sex" 하나로 묶어 보낸다.)
+  // 2) sceneTag — exact 매칭(+5), "sex" 토큰의 sex_* prefix 매칭(+12).
+  //    (asset sceneTag 는 sex_a/sex_b/sex_bg/sex_naked 로 세분화돼 있지만 토큰
+  //    쪽은 "sex" 하나. naked 토큰 + naked sceneTag 가 +10 (clothing) + +5
+  //    (scene) = 15 를 받는데, sex 토큰 + sex_* sceneTag 가 +5 만 받으면 같은
+  //    clothing=naked sex 자산이 도태된다. +12 로 올려 명시적 sex 의도가
+  //    naked 정지 컷보다 항상 우선되게 한다.)
   if (asset.sceneTag) {
     if (expanded.includes(asset.sceneTag)) score += 5;
-    else if (expanded.includes("sex") && asset.sceneTag.startsWith("sex")) score += 5;
+    else if (sexIntent && asset.sceneTag.startsWith("sex")) score += 12;
   }
 
   // 3) expression
@@ -201,9 +220,14 @@ export function scoreAsset(
   score += hasAny(asset.triggerTags, expanded) * 2;
 
   // 7) NSFW 가드
+  //    명시적 sex 의도가 있고 자산 sceneTag 가 sex_* 라면 페널티 면제.
+  //    그 외 케이스(naked 정지컷, underwear 컷 등) 는 기존대로.
   const horny = ctx.horny ?? 0;
-  if (asset.nsfwLevel === 3 && horny < 40) score -= 8;
-  if (asset.nsfwLevel === 2 && horny < 20) score -= 3;
+  const exemptByIntent = sexIntent && asset.sceneTag?.startsWith("sex");
+  if (!exemptByIntent) {
+    if (asset.nsfwLevel === 3 && horny < 40) score -= 8;
+    if (asset.nsfwLevel === 2 && horny < 20) score -= 3;
+  }
 
   return score;
 }
@@ -262,9 +286,9 @@ const BODY_KEYWORDS: Array<{ re: RegExp; tags: string[] }> = [
   { re: /다정|쓰다듬|어루만/, tags: ["tender", "affectionate"] },
   { re: /흥분|달아오|뜨거워|숨이 가/, tags: ["aroused"] },
   // 섹스 씬 매칭 — "sex" 토큰은 scoreAsset 에서 sceneTag 가 "sex_*" 로 시작하는
-  // 모든 에셋에 +5 를 주는 fallback 을 태운다. 과매칭 우려가 있지만 aroused/horny
-  // 가 함께 오지 않으면 NSFW 가드(-8)에 막혀서 실제 선택은 거의 되지 않는다.
-  { re: /관계|삽입|박아|박으|들어와|속으로|절정|흘러|신음|헐떡|교성|섹스/, tags: ["sex", "moaning", "horny"] },
+  // 모든 에셋에 +12 를 주고, NSFW 페널티(-8) 도 면제한다.
+  // (이전엔 +5 / 페널티 그대로 라서 naked 정지컷에 도태되는 버그가 있었다.)
+  { re: /관계|삽입|박아|박으|들어와|속으로|절정|흘러|신음|헐떡|교성|섹스|성관계|애무|핥|빨/, tags: ["sex", "moaning", "horny"] },
 ];
 
 export function spotBodyTokens(body: string): string[] {

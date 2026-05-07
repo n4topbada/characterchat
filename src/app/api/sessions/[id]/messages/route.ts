@@ -21,7 +21,7 @@ import {
 } from "@/lib/assets/pickBackground";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const Body = z.object({
   content: z.string().trim().min(1).max(4000),

@@ -40,7 +40,7 @@ import {
 
 export const dynamic = "force-dynamic";
 // 이미지 생성은 10~30초, 스트림 특성상 여유 있게.
-export const maxDuration = 180;
+export const maxDuration = 300;
 
 type BodyInput = {
   prompt?: string;
