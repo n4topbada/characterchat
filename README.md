@@ -178,65 +178,6 @@ flowchart TD
 - Storage: Vercel Blob
 - Streaming: Server-Sent Events
 
-## API Surface
-
-Chat:
-
-- `GET /api/sessions/[id]/messages`
-- `POST /api/sessions/[id]/messages`
-- `GET /api/sessions/[id]/events`
-
-Character operations:
-
-- `POST /api/admin/characters/extract`
-- `GET/POST /api/admin/characters/[id]/interests`
-- `POST /api/admin/characters/[id]/news/refresh`
-- `GET/POST /api/admin/characters/[id]/knowledge`
-- `GET/POST /api/admin/characters/[id]/persona`
-
-Admin/caster:
-
-- `POST /api/admin/caster/runs`
-- `POST /api/admin/caster/runs/[id]/messages`
-- `POST /api/admin/caster/runs/[id]/commit`
-
-## Setup
-
-```bash
-npm install
-cp .env.example .env
-npx prisma db push
-npx tsx scripts/seed-character-interests.ts
-npm run dev
-```
-
-Required environment variables:
-
-```bash
-DATABASE_URL=
-AUTH_SECRET=
-AUTH_GOOGLE_ID=
-AUTH_GOOGLE_SECRET=
-GOOGLE_GENAI_API_KEY=
-GOOGLE_GENAI_API_KEY_FALLBACK=
-BLOB_READ_WRITE_TOKEN=
-ADMIN_EMAILS=
-```
-
-## Scripts
-
-```bash
-npm run dev
-npm run build
-npm run typecheck
-npm run db:generate
-npm run db:migrate
-npm run db:deploy
-npm run db:studio
-npm run db:seed
-npx tsx scripts/seed-character-interests.ts
-```
-
 ## Current Status
 
 Implemented:
@@ -255,10 +196,6 @@ Implemented:
 - character interest freshness
 - automatic interest inference fallback
 - character extraction from unstructured text/URL/DB docs
-
-Known technical note:
-
-- This project is still pre-production. The DB was aligned with `prisma db push` during rapid schema iteration. Before production launch, migration history should be normalized and replay-tested against a clean database.
 
 ## Roadmap
 
