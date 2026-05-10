@@ -46,192 +46,350 @@ export function ChatShell({
   // 최신 스냅샷을 ref 로 유지해 send() 안에서 꺼낸다.
   const messagesRef = useRef<ChatMessage[]>(initialMessages);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const burstRef = useRef<{
+    texts: string[];
+    timer: ReturnType<typeof setTimeout> | null;
+  }>({ texts: [], timer: null });
 
   useEffect(() => {
     messagesRef.current = messages;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streaming]);
 
+  useEffect(() => {
+    let stopped = false;
+    let controller: AbortController | null = null;
+
+    const applyEvent = (event: string, data: string) => {
+      if (event === "message_start") {
+        try {
+          const msg = JSON.parse(data) as {
+            id: string;
+            role: "model";
+            createdAt?: string;
+          };
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [
+              ...prev,
+              {
+                id: msg.id,
+                role: "model",
+                content: "",
+                createdAt: msg.createdAt ?? new Date().toISOString(),
+              },
+            ];
+          });
+        } catch {
+          // ignore
+        }
+      } else if (event === "message_delta") {
+        try {
+          const { id: msgId, text } = JSON.parse(data) as {
+            id: string;
+            text: string;
+          };
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msgId ? { ...m, content: m.content + text } : m,
+            ),
+          );
+        } catch {
+          // ignore
+        }
+      } else if (event === "message_done") {
+        try {
+          const { id: msgId } = JSON.parse(data) as { id: string };
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msgId
+                ? { ...m, content: stripImageTagsClient(m.content) }
+                : m,
+            ),
+          );
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const connect = async () => {
+      while (!stopped) {
+        controller = new AbortController();
+        try {
+          const r = await fetch(`/api/sessions/${sessionId}/events`, {
+            method: "GET",
+            signal: controller.signal,
+          });
+          if (!r.ok || !r.body) {
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            continue;
+          }
+          const reader = r.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          while (!stopped) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const frames = buffer.split("\n\n");
+            buffer = frames.pop() ?? "";
+            for (const frame of frames) {
+              const lines = frame.split("\n");
+              const evLine = lines.find((l) => l.startsWith("event:"));
+              const dataLine = lines.find((l) => l.startsWith("data:"));
+              if (!evLine || !dataLine) continue;
+              applyEvent(evLine.slice(6).trim(), dataLine.slice(5).trim());
+            }
+          }
+        } catch {
+          if (stopped) break;
+        }
+        if (!stopped) await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    };
+
+    void connect();
+    return () => {
+      stopped = true;
+      controller?.abort();
+    };
+  }, [sessionId]);
+
   const send = useCallback(
     async (text: string, opts?: { retry?: boolean }) => {
       lastUserTextRef.current = text;
       const now = Date.now();
-      const modelId = "tmp-m-" + now;
 
-      // 재전송 모드: 기존 실패한 마지막 model 메시지를 같은 ID 로 리셋해서
-      // "실패 → 재시도 중" 가 자연스럽게 이어지도록 한다. 유저 메시지는
-      // 추가하지 않음 (이미 위에 그대로 남아있음).
-      // messagesRef 를 써서 stale closure 를 회피.
-      const lastModelId = opts?.retry
-        ? ([...messagesRef.current].reverse().find((m) => m.role === "model")?.id ?? modelId)
-        : modelId;
-      if (opts?.retry) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === lastModelId
-              ? { ...m, content: "", failed: false }
-              : m,
-          ),
-        );
-      } else {
-        // 일반 전송: user + 빈 model placeholder 를 append.
+      const flushBurst = async (texts: string[]) => {
+        const combinedText = texts.join("\n");
+        lastUserTextRef.current = combinedText;
+        setStreaming(true);
+        let currentModelId: string | null = null;
+
+        const ensureFailedMessage = (errorText?: string) => {
+          const failedId = currentModelId ?? "tmp-m-failed-" + Date.now();
+          setMessages((prev) => {
+            const exists = prev.some((m) => m.id === failedId);
+            if (exists) {
+              return prev.map((m) =>
+                m.id === failedId
+                  ? { ...m, content: "(RESPONSE_ERROR)", failed: true, errorText }
+                  : m,
+              );
+            }
+            return [
+              ...prev,
+              {
+                id: failedId,
+                role: "model",
+                content: "(RESPONSE_ERROR)",
+                createdAt: new Date().toISOString(),
+                failed: true,
+                errorText,
+              },
+            ];
+          });
+        };
+
+        try {
+          const r = await fetch(`/api/sessions/${sessionId}/messages`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ content: combinedText }),
+          });
+          if (!r.ok || !r.body) {
+            ensureFailedMessage(`요청이 실패했어요 (HTTP ${r.status}).`);
+            setStreaming(false);
+            return;
+          }
+          const reader = r.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const frames = buffer.split("\n\n");
+            buffer = frames.pop() ?? "";
+            for (const frame of frames) {
+              const lines = frame.split("\n");
+              const evLine = lines.find((l) => l.startsWith("event:"));
+              const dataLine = lines.find((l) => l.startsWith("data:"));
+              if (!evLine || !dataLine) continue;
+              const event = evLine.slice(6).trim();
+              const data = dataLine.slice(5).trim();
+
+              if (event === "message_start") {
+                try {
+                  const msg = JSON.parse(data) as {
+                    id: string;
+                    role: "model";
+                    createdAt?: string;
+                  };
+                  currentModelId = msg.id;
+                  setMessages((prev) => {
+                    if (prev.some((m) => m.id === msg.id)) return prev;
+                    return [
+                      ...prev,
+                      {
+                        id: msg.id,
+                        role: "model",
+                        content: "",
+                        createdAt: msg.createdAt ?? new Date().toISOString(),
+                      },
+                    ];
+                  });
+                } catch {
+                  // ignore
+                }
+              } else if (event === "message_delta") {
+                try {
+                  const { id: msgId, text: t } = JSON.parse(data) as {
+                    id: string;
+                    text: string;
+                  };
+                  currentModelId = msgId;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === msgId ? { ...m, content: m.content + t } : m,
+                    ),
+                  );
+                } catch {
+                  // ignore
+                }
+              } else if (event === "delta") {
+                // Back-compat for older route streams.
+                try {
+                  const { text: t } = JSON.parse(data) as { text: string };
+                  const fallbackModelId: string = currentModelId ?? "tmp-m-" + now;
+                  currentModelId = fallbackModelId;
+                  setMessages((prev) => {
+                    const exists = prev.some((m) => m.id === fallbackModelId);
+                    const next = exists
+                      ? prev
+                      : [
+                          ...prev,
+                          {
+                            id: fallbackModelId,
+                            role: "model" as const,
+                            content: "",
+                            createdAt: new Date().toISOString(),
+                          },
+                        ];
+                    return next.map((m) =>
+                      m.id === fallbackModelId ? { ...m, content: m.content + t } : m,
+                    );
+                  });
+                } catch {
+                  // ignore
+                }
+              } else if (event === "image") {
+                try {
+                  const {
+                    id: imageMessageId,
+                    url,
+                    width,
+                    height,
+                  } = JSON.parse(data) as {
+                    id?: string;
+                    url: string;
+                    width: number;
+                    height: number;
+                  };
+                  const targetId = imageMessageId ?? currentModelId;
+                  if (!targetId) continue;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === targetId
+                        ? {
+                            ...m,
+                            content: stripImageTagsClient(m.content),
+                            image: { url, width, height },
+                          }
+                        : m,
+                    ),
+                  );
+                } catch {
+                  // ignore
+                }
+              } else if (event === "background_picked") {
+                try {
+                  const { url } = JSON.parse(data) as { url: string };
+                  if (url) setBackgroundUrl(url);
+                } catch {
+                  // ignore
+                }
+              } else if (event === "message_done" || event === "done") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.role === "model"
+                      ? { ...m, content: stripImageTagsClient(m.content) }
+                      : m,
+                  ),
+                );
+              } else if (event === "retry") {
+                if (currentModelId) {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === currentModelId ? { ...m, content: "" } : m,
+                    ),
+                  );
+                }
+              } else if (event === "error") {
+                let errorText: string | undefined;
+                try {
+                  const parsed = JSON.parse(data) as { message?: string };
+                  errorText = parsed.message;
+                } catch {
+                  // ignore
+                }
+                ensureFailedMessage(errorText);
+              }
+            }
+          }
+        } finally {
+          setStreaming(false);
+        }
+      };
+
+      if (!opts?.retry) {
         const userMsg: ChatMessage = {
           id: "tmp-u-" + now,
           role: "user",
           content: text,
           createdAt: new Date().toISOString(),
         };
-        setMessages((prev) => [
-          ...prev,
-          userMsg,
-          {
-            id: modelId,
-            role: "model",
-            content: "",
-            createdAt: new Date().toISOString(),
-          },
-        ]);
+        setMessages((prev) => [...prev, userMsg]);
+
+        burstRef.current.texts.push(text);
+        if (burstRef.current.timer) clearTimeout(burstRef.current.timer);
+        const waitMs =
+          text.trim().length < 24 || !/[.!?。！？]$/.test(text.trim())
+            ? 1500
+            : 650;
+        burstRef.current.timer = setTimeout(() => {
+          const texts = [...burstRef.current.texts];
+          burstRef.current.texts = [];
+          burstRef.current.timer = null;
+          void flushBurst(texts);
+        }, waitMs);
+        return;
       }
-      setStreaming(true);
 
-      // 실패 시 표시할 모델 메시지 ID. retry 면 기존 lastModelId 를, 아니면 새 modelId.
-      const targetModelId = lastModelId;
-
-      const markFailed = (errorText?: string) => {
+      const lastModelId =
+        [...messagesRef.current].reverse().find((m) => m.role === "model")?.id ??
+        null;
+      if (lastModelId) {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === targetModelId
-              ? { ...m, content: "(RESPONSE_ERROR)", failed: true, errorText }
-              : m,
+            m.id === lastModelId ? { ...m, content: "", failed: false } : m,
           ),
         );
-      };
-
-      try {
-        const r = await fetch(`/api/sessions/${sessionId}/messages`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ content: text }),
-        });
-        if (!r.ok || !r.body) {
-          // SSE 가 시작되기도 전에 HTTP 자체가 깨진 케이스 (auth, 세션 없음, 500 등).
-          // 정확한 상태코드를 보여줘야 "왜 실패했는지" 가 드러난다.
-          markFailed(`요청이 실패했어요 (HTTP ${r.status}).`);
-          setStreaming(false);
-          return;
-        }
-        const reader = r.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          const frames = buffer.split("\n\n");
-          buffer = frames.pop() ?? "";
-          for (const frame of frames) {
-            const lines = frame.split("\n");
-            const evLine = lines.find((l) => l.startsWith("event:"));
-            const dataLine = lines.find((l) => l.startsWith("data:"));
-            if (!evLine || !dataLine) continue;
-            const event = evLine.slice(6).trim();
-            const data = dataLine.slice(5).trim();
-            if (event === "delta") {
-              try {
-                const { text: t } = JSON.parse(data) as { text: string };
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === targetModelId ? { ...m, content: m.content + t } : m
-                  )
-                );
-              } catch {
-                // ignore
-              }
-            } else if (event === "image") {
-              try {
-                const {
-                  url,
-                  width,
-                  height,
-                } = JSON.parse(data) as {
-                  id: string;
-                  url: string;
-                  width: number;
-                  height: number;
-                };
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === targetModelId
-                      ? {
-                          ...m,
-                          content: stripImageTagsClient(m.content),
-                          image: { url, width, height },
-                        }
-                      : m
-                  )
-                );
-              } catch {
-                // ignore
-              }
-            } else if (event === "background_picked") {
-              // 서버가 현재 status(location+mood) 기준으로 고른 배경 URL.
-              // RoomBackdrop 이 자체적으로 중복 URL 을 걸러내므로 setter 만 호출.
-              try {
-                const { url } = JSON.parse(data) as { url: string };
-                if (url) setBackgroundUrl(url);
-              } catch {
-                // ignore
-              }
-            } else if (event === "done") {
-              // stream complete — clean any lingering <img tags/> tokens in the
-              // accumulated buffer (서버 저장본은 이미 stripped, 클라 중간 버퍼는 남을 수 있음).
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === targetModelId
-                    ? { ...m, content: stripImageTagsClient(m.content) }
-                    : m
-                )
-              );
-            } else if (event === "retry") {
-              // 서버가 빈 응답/블록 감지 후 재시도 — 지금까지의 delta 버퍼를 리셋.
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === targetModelId ? { ...m, content: "" } : m
-                )
-              );
-            } else if (event === "error") {
-              // 서버가 error 이벤트로 종료 — failed 플래그를 세워서 에러 버블 +
-              // 재전송 버튼이 뜨도록. 서버가 보낸 실제 메시지 (예: "모델 서버가
-              // 잠시 혼잡해요 (503)...") 를 errorText 로 저장해 MessageBubble 이
-              // 그걸 그대로 보여주도록 한다. 이전엔 "(RESPONSE_ERROR)" 만 남아서
-              // 사용자는 실제 에러 원인이 무엇인지 알 수 없었다.
-              let errorText: string | undefined;
-              try {
-                const parsed = JSON.parse(data) as { message?: string };
-                errorText = parsed.message;
-              } catch {
-                // message 가 없거나 파싱 실패 — 폴백 문구로.
-              }
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === targetModelId
-                    ? {
-                        ...m,
-                        content: "(RESPONSE_ERROR)",
-                        failed: true,
-                        errorText,
-                      }
-                    : m
-                )
-              );
-            }
-          }
-        }
-      } finally {
-        setStreaming(false);
       }
+      await flushBurst([text]);
     },
     [sessionId]
   );

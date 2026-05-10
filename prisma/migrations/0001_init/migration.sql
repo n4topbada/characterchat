@@ -1,0 +1,4 @@
+-- Baseline placeholder.
+-- The initial schema for this development database was created before
+-- migration history was consistently tracked. Later migrations contain the
+-- concrete incremental DDL used by this project.

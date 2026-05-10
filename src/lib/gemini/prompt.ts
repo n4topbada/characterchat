@@ -69,6 +69,30 @@ export type ChunkSnap = {
   createdAt?: Date;
 };
 
+export type TemporalPromptSnap = {
+  timezone: string;
+  localLabel: string;
+  dayType: "weekday" | "weekend";
+  lifeState: string;
+  lifeStateLabel: string;
+  timeGapMinutes: number | null;
+  gapLabel: string;
+  continuity: string;
+  shouldClosePreviousEpisode: boolean;
+  timelineRule: string;
+};
+
+export type TurnPolicySnap = {
+  stance: string;
+  responseMode: string;
+  sceneContinuity: string;
+  allowedIntensity: string;
+  shouldReferenceTime: boolean;
+  timeReferenceStyle: string;
+  nextAction: string;
+  boundary: string;
+};
+
 export type ComposerContext = {
   core: PersonaCoreSnap;
   state?: PersonaStateSnap | null;
@@ -85,6 +109,8 @@ export type ComposerContext = {
    * 맥락 연속성을 위한 세션 내부 롤링 요약.
    */
   sessionSummary?: string | null;
+  temporal?: TemporalPromptSnap | null;
+  turnPolicy?: TurnPolicySnap | null;
   /**
    * 이미지 에셋을 가진 캐릭터는 LLM 이 응답 중에 <img tags="..."/> 토큰을 넣을 수 있음.
    * 서버가 이 토큰을 파싱해 가장 적합한 Asset 을 골라 SSE 로 보낸다.
@@ -269,6 +295,8 @@ function formatBlock(statusPanelSchema?: unknown | null): string {
     "- 장면 배경·분위기 서술이 필요하면 **행동 문단에 *별표* 로 감싸서** 쓴다. 평문으로 흘리지 말 것.",
     "- 언어: 한국어. 이모지·이모티콘·아이콘 문자 금지.",
     "- 지어낸 사실은 쓰지 않는다. 모르는 주제는 말 돌리기로 자연스럽게 피한다.",
+    "- 유저 입력이 여러 줄이면 같은 사람이 짧게 연속으로 보낸 한 묶음이다. 각 줄에 따로 답하지 말고 전체 의도와 마지막 요구를 중심으로 한 흐름으로 반응한다.",
+    "- 짧은 감정 반응, 행동 묘사, 본론은 문단을 나눠도 된다. 서버가 문단 단위로 자연스럽게 여러 메시지처럼 표시한다.",
   ];
   if (statusPanelSchema) {
     // schema 에 scene 이 빠져 있어도 LLM 이 스스로 추가하도록 강제. 서버는
@@ -319,6 +347,41 @@ function summaryBlock(sessionSummary?: string | null): string | null {
   return `[세션 요약]\n${sessionSummary}`;
 }
 
+function temporalBlock(temporal?: TemporalPromptSnap | null): string | null {
+  if (!temporal) return null;
+  const gap =
+    temporal.timeGapMinutes == null
+      ? "첫 대화"
+      : `${temporal.timeGapMinutes}분`;
+  return [
+    "[현재 시간 · 캐릭터 생활 리듬]",
+    `캐릭터 기준 시간대: ${temporal.timezone}`,
+    `현재 캐릭터 시각: ${temporal.localLabel} (${temporal.dayType === "weekend" ? "주말" : "평일"})`,
+    `현재 생활 상태: ${temporal.lifeStateLabel} (${temporal.lifeState})`,
+    `마지막 대화 이후 경과: ${gap} / 공백 유형: ${temporal.gapLabel}`,
+    `장면 연속성: ${temporal.continuity}`,
+    `이전 에피소드 정리 신호: ${temporal.shouldClosePreviousEpisode ? "있음" : "없음"}`,
+    `생활 리듬 규칙: ${temporal.timelineRule}`,
+    "- 현재 시각은 자연스러운 생활감으로만 반영한다. 매번 시각을 직접 말하지 않는다.",
+    "- 캐릭터는 항상 대기 중인 봇처럼 굴지 말고, 이 시간대에 자기 삶을 살고 있던 사람처럼 반응한다.",
+  ].join("\n");
+}
+
+function turnPolicyBlock(policy?: TurnPolicySnap | null): string | null {
+  if (!policy) return null;
+  return [
+    "[이번 턴 반응 정책]",
+    `태도: ${policy.stance}`,
+    `응답 모드: ${policy.responseMode}`,
+    `장면 연속성: ${policy.sceneContinuity}`,
+    `허용 에너지/강도: ${policy.allowedIntensity}`,
+    `시간 언급: ${policy.shouldReferenceTime ? policy.timeReferenceStyle : "none"}`,
+    `행동 방침: ${policy.nextAction}`,
+    `경계: ${policy.boundary}`,
+    "- 위 정책은 내부 연출 지침이다. 그대로 설명하지 말고 장면과 대사로만 드러낸다.",
+  ].join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // 메인 진입점
 // ---------------------------------------------------------------------------
@@ -327,6 +390,8 @@ export function buildSystemInstruction(ctx: ComposerContext): string {
   const parts: (string | null)[] = [
     premiseBlock(),
     narratorBlock(),
+    temporalBlock(ctx.temporal),
+    turnPolicyBlock(ctx.turnPolicy),
     summaryBlock(ctx.sessionSummary),
     coreBlock(ctx.core),
     stateBlock(ctx.core, ctx.state),

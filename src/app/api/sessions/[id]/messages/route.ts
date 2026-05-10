@@ -19,6 +19,16 @@ import {
   pickBestBackground,
   type PickableBackground,
 } from "@/lib/assets/pickBackground";
+import { buildTemporalContext } from "@/lib/temporal/timeline";
+import { planTurnPolicy } from "@/lib/policy/planner";
+import { writeClosedEpisodeMemory } from "@/lib/memory/episode";
+import { rollupRelationSummary } from "@/lib/memory/relation";
+import { splitAssistantMessage } from "@/lib/conversation/assistantSplit";
+import {
+  detectNewsTrigger,
+  saveRealtimeNewsChunk,
+  searchRealtimeNews,
+} from "@/lib/news/realtime";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -96,7 +106,56 @@ export async function POST(
   if (!session.character.config) return errorJson("character_misconfigured", 500);
   if (!session.character.personaCore) return errorJson("persona_missing", 500);
 
+  const previousMessageCount = await prisma.message.count({
+    where: { sessionId: id },
+  });
+  const cfg = session.character.config;
+  const core = session.character.personaCore;
+  const temporal = buildTemporalContext({
+    lastInteractionAt: previousMessageCount > 0 ? session.lastMessageAt : null,
+    character: {
+      slug: session.character.slug,
+      role: core.role,
+    },
+  });
+
+  if (previousMessageCount > 0 && temporal.shouldClosePreviousEpisode) {
+    const previousMessages = await prisma.message.findMany({
+      where: { sessionId: id, role: { in: ["user", "model"] } },
+      orderBy: { createdAt: "asc" },
+      take: 80,
+    });
+    const episodeResult = await writeClosedEpisodeMemory({
+      sessionId: id,
+      userId: gate.userId,
+      characterId: session.characterId,
+      characterName: core.displayName,
+      temporal,
+      messages: previousMessages,
+    }).catch((e) => {
+      console.warn(
+        "[episode] close failed:",
+        e instanceof Error ? e.message : String(e),
+      );
+      return { created: false };
+    });
+    if (episodeResult.created) {
+      await rollupRelationSummary({
+        userId: gate.userId,
+        characterId: session.characterId,
+        characterName: core.displayName,
+        temporal,
+      }).catch((e) => {
+        console.warn(
+          "[relation] rollup failed:",
+          e instanceof Error ? e.message : String(e),
+        );
+      });
+    }
+  }
+
   // 1. 유저 메시지 저장
+  // Save user input before retrieval and realtime lookup.
   await prisma.message.create({
     data: {
       id: newId(),
@@ -107,14 +166,70 @@ export async function POST(
   });
 
   // 2. 최근 히스토리 로드 (최대 20턴)
+  const interests = await prisma.characterInterest.findMany({
+    where: { characterId: session.characterId, enabled: true },
+    orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+    take: 12,
+    select: { label: true, query: true, freshnessHours: true },
+  });
+  const newsTrigger = detectNewsTrigger({
+    message: parsed.data.content,
+    characterName: core.displayName,
+    interests,
+  });
+  if (newsTrigger.shouldSearch) {
+    const cached = await prisma.knowledgeChunk.findFirst({
+      where: {
+        characterId: session.characterId,
+        type: "external_info",
+        metadata: { path: ["topic"], equals: newsTrigger.query },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { metadata: true },
+    });
+    const expiresAt =
+      cached?.metadata &&
+      typeof cached.metadata === "object" &&
+      "expiresAt" in cached.metadata
+        ? new Date(String((cached.metadata as Record<string, unknown>).expiresAt))
+        : null;
+    if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt < new Date()) {
+      const found = await searchRealtimeNews({
+        query: newsTrigger.query,
+        characterName: core.displayName,
+        nowLabel: temporal.localLabel,
+      }).catch((e) => {
+        console.warn(
+          "[realtime-news] lookup failed:",
+          e instanceof Error ? e.message : String(e),
+        );
+        return null;
+      });
+      if (found?.summary) {
+        await saveRealtimeNewsChunk({
+          characterId: session.characterId,
+          userId: gate.userId,
+          sessionId: id,
+          topic: newsTrigger.query,
+          summary: found.summary,
+          sourceUrls: found.sourceUrls,
+          raw: found.raw,
+          ttlHours: interests[0]?.freshnessHours ?? 24,
+        }).catch((e) => {
+          console.warn(
+            "[realtime-news] save failed:",
+            e instanceof Error ? e.message : String(e),
+          );
+        });
+      }
+    }
+  }
+
   const history = await prisma.message.findMany({
     where: { sessionId: id, role: { in: ["user", "model"] } },
     orderBy: { createdAt: "asc" },
     take: 40,
   });
-
-  const cfg = session.character.config;
-  const core = session.character.personaCore;
 
   // 3. PersonaState — (user × character). Phase A 에서는 없어도 된다(composer 가 defaults 주입).
   const stateRow = await prisma.personaState.findUnique({
@@ -172,58 +287,70 @@ export async function POST(
     },
   });
 
+  const coreSnap = {
+    displayName: core.displayName,
+    aliases: core.aliases,
+    pronouns: core.pronouns,
+    ageText: core.ageText,
+    gender: core.gender,
+    species: core.species,
+    role: core.role,
+    backstorySummary: core.backstorySummary,
+    worldContext: core.worldContext,
+    coreBeliefs: core.coreBeliefs,
+    coreMotivations: core.coreMotivations,
+    fears: core.fears,
+    redLines: core.redLines,
+    speechRegister: core.speechRegister,
+    speechEndings: core.speechEndings,
+    speechRhythm: core.speechRhythm,
+    speechQuirks: core.speechQuirks,
+    languageNotes: core.languageNotes,
+    appearanceKeys: core.appearanceKeys,
+    defaultAffection: core.defaultAffection,
+    defaultTrust: core.defaultTrust,
+    defaultStage: core.defaultStage,
+    defaultMood: core.defaultMood,
+    defaultEnergy: core.defaultEnergy,
+    defaultStress: core.defaultStress,
+    defaultStability: core.defaultStability,
+    behaviorPatterns: (core.behaviorPatterns ?? null) as never,
+  };
+  const stateSnap = stateRow
+    ? {
+        affection: stateRow.affection,
+        trust: stateRow.trust,
+        tension: stateRow.tension,
+        familiarity: stateRow.familiarity,
+        stage: stateRow.stage,
+        surfaceMood: stateRow.surfaceMood,
+        innerMood: stateRow.innerMood,
+        pendingEmotions: (stateRow.pendingEmotions ?? null) as never,
+        statusPayload: stateRow.statusPayload ?? null,
+        relationSummary: stateRow.relationSummary,
+      }
+    : null;
+  const turnPolicy = planTurnPolicy({
+    userMessage: parsed.data.content,
+    temporal,
+    core: coreSnap,
+    state: stateSnap,
+  });
+
   const systemInstruction = buildSystemInstruction({
-    core: {
-      displayName: core.displayName,
-      aliases: core.aliases,
-      pronouns: core.pronouns,
-      ageText: core.ageText,
-      gender: core.gender,
-      species: core.species,
-      role: core.role,
-      backstorySummary: core.backstorySummary,
-      worldContext: core.worldContext,
-      coreBeliefs: core.coreBeliefs,
-      coreMotivations: core.coreMotivations,
-      fears: core.fears,
-      redLines: core.redLines,
-      speechRegister: core.speechRegister,
-      speechEndings: core.speechEndings,
-      speechRhythm: core.speechRhythm,
-      speechQuirks: core.speechQuirks,
-      languageNotes: core.languageNotes,
-      appearanceKeys: core.appearanceKeys,
-      defaultAffection: core.defaultAffection,
-      defaultTrust: core.defaultTrust,
-      defaultStage: core.defaultStage,
-      defaultMood: core.defaultMood,
-      defaultEnergy: core.defaultEnergy,
-      defaultStress: core.defaultStress,
-      defaultStability: core.defaultStability,
-      behaviorPatterns: (core.behaviorPatterns ?? null) as never,
-    },
-    state: stateRow
-      ? {
-          affection: stateRow.affection,
-          trust: stateRow.trust,
-          tension: stateRow.tension,
-          familiarity: stateRow.familiarity,
-          stage: stateRow.stage,
-          surfaceMood: stateRow.surfaceMood,
-          innerMood: stateRow.innerMood,
-          pendingEmotions: (stateRow.pendingEmotions ?? null) as never,
-          statusPayload: stateRow.statusPayload ?? null,
-          relationSummary: stateRow.relationSummary,
-        }
-      : null,
+    core: coreSnap,
+    state: stateSnap,
     chunks: {
       knowledge: retrieved.knowledge,
       styleAnchors: retrieved.styleAnchors,
       episodes: retrieved.episodes,
       relationSummary: retrieved.relationSummary,
+      externalInfo: retrieved.externalInfo,
     },
     statusPanelSchema: cfg.statusPanelSchema ?? null,
     sessionSummary: session.summary,
+    temporal,
+    turnPolicy,
     hasImageAssets: galleryAssets.length > 0,
   });
 
@@ -254,7 +381,6 @@ export async function POST(
         maxOutputTokens: cfg.maxOutputTokens,
       })) {
         acc += delta;
-        send("delta", { text: delta });
       }
       return acc;
     };
@@ -346,27 +472,69 @@ export async function POST(
       // 저장 전 본문에서 레거시 <img> 토큰 제거 (있을 경우 대비).
       const cleanContent = stripImageTags(full);
 
-      await prisma.message.create({
-        data: {
-          id: messageId,
-          sessionId: id,
-          role: "model",
-          content: cleanContent,
-          imageAssetId: pickedAsset?.id ?? null,
-        },
-      });
+      const parts = splitAssistantMessage(cleanContent);
+      const modelMessages = parts.length
+        ? parts
+        : [{ content: cleanContent, kind: "dialogue" as const }];
+      const imageTargetIndex = pickedAsset
+        ? Math.max(
+            0,
+            modelMessages.findLastIndex((part) => part.kind === "dialogue"),
+          )
+        : -1;
+      const savedMessages: Array<{
+        id: string;
+        content: string;
+        createdAt: Date;
+        image: PickableAsset | null;
+      }> = [];
+      for (let i = 0; i < modelMessages.length; i++) {
+        const part = modelMessages[i];
+        const idForPart = i === 0 ? messageId : newId();
+        const createdAt = new Date(Date.now() + i);
+        const image = i === imageTargetIndex ? pickedAsset : null;
+        await prisma.message.create({
+          data: {
+            id: idForPart,
+            sessionId: id,
+            role: "model",
+            content: part.content,
+            imageAssetId: image?.id ?? null,
+            createdAt,
+          },
+        });
+        savedMessages.push({
+          id: idForPart,
+          content: part.content,
+          createdAt,
+          image,
+        });
+      }
       await prisma.session.update({
         where: { id },
         data: { lastMessageAt: new Date() },
       });
 
-      if (pickedAsset) {
-        send("image", {
-          id: messageId,
-          url: pickedAsset.blobUrl,
-          width: pickedAsset.width,
-          height: pickedAsset.height,
+      for (let i = 0; i < savedMessages.length; i++) {
+        const msg = savedMessages[i];
+        send("message_start", {
+          id: msg.id,
+          role: "model",
+          createdAt: msg.createdAt.toISOString(),
         });
+        send("message_delta", { id: msg.id, text: msg.content });
+        if (msg.image) {
+          send("image", {
+            id: msg.id,
+            url: msg.image.blobUrl,
+            width: msg.image.width,
+            height: msg.image.height,
+          });
+        }
+        send("message_done", { id: msg.id });
+        if (i < savedMessages.length - 1) {
+          await new Promise((r) => setTimeout(r, 350));
+        }
       }
 
       if (pickedBackground) {
@@ -400,7 +568,7 @@ export async function POST(
         });
       }
 
-      send("done", { id: messageId });
+      send("done", { ids: savedMessages.map((m) => m.id), id: savedMessages[0]?.id ?? messageId });
     } catch (err) {
       // 업스트림(Gemini) 에러를 사용자 친화적 메시지로 분류.
       // status/kind 는 서버 로그에만 남기고, 사용자에게는 상태 코드 포함된

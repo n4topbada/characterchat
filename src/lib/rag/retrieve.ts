@@ -35,6 +35,7 @@ export async function retrieveForPrompt({
   styleAnchors: ChunkSnap[];
   episodes: ChunkSnap[];
   relationSummary: ChunkSnap | null;
+  externalInfo: ChunkSnap[];
 }> {
   // 쿼리 임베딩
   const queryVec = await embedText(query).catch((e) => {
@@ -84,6 +85,7 @@ export async function retrieveForPrompt({
 
   let episodeRows: ChunkRow[] = [];
   let relationRows: ChunkRow[] = [];
+  let externalRows: ChunkRow[] = [];
   if (userId) {
     episodeRows = qLit
       ? ((await prisma.$queryRawUnsafe(
@@ -121,6 +123,44 @@ export async function retrieveForPrompt({
     )) as ChunkRow[];
   }
 
+  externalRows = qLit
+    ? ((await prisma.$queryRawUnsafe(
+        `SELECT id, content, metadata, "createdAt" AS created_at, type::text AS type,
+                (embedding <=> $1::vector) AS distance
+         FROM "KnowledgeChunk"
+         WHERE "characterId" = $2
+           AND type = 'external_info'
+           AND ("userId" IS NULL OR "userId" = $3)
+           AND (
+             metadata IS NULL
+             OR (metadata->>'expiresAt') IS NULL
+             OR (metadata->>'expiresAt')::timestamp > now()
+           )
+           AND embedding IS NOT NULL
+         ORDER BY embedding <=> $1::vector ASC
+         LIMIT 4`,
+        qLit,
+        characterId,
+        userId ?? null,
+      )) as ChunkRow[])
+    : ((await prisma.$queryRawUnsafe(
+        `SELECT id, content, metadata, "createdAt" AS created_at, type::text AS type,
+                0::float AS distance
+         FROM "KnowledgeChunk"
+         WHERE "characterId" = $1
+           AND type = 'external_info'
+           AND ($2::text IS NULL OR "userId" IS NULL OR "userId" = $2)
+           AND (
+             metadata IS NULL
+             OR (metadata->>'expiresAt') IS NULL
+             OR (metadata->>'expiresAt')::timestamp > now()
+           )
+         ORDER BY "createdAt" DESC
+         LIMIT 4`,
+        characterId,
+        userId ?? null,
+      )) as ChunkRow[]);
+
   const toSnap = (r: ChunkRow): ChunkSnap => ({
     content: r.content,
     metadata: (r.metadata ?? null) as ChunkSnap["metadata"],
@@ -132,5 +172,6 @@ export async function retrieveForPrompt({
     styleAnchors: styleRows.map(toSnap),
     episodes: episodeRows.map(toSnap),
     relationSummary: relationRows.length ? toSnap(relationRows[0]) : null,
+    externalInfo: externalRows.map(toSnap),
   };
 }

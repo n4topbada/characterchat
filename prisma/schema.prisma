@@ -31,6 +31,8 @@ enum KnowledgeSource {
   admin_research
   admin_edit
   runtime_extraction
+  news_feed
+  character_extraction
 }
 
 // KnowledgeChunk 의 의미 구분자.
@@ -72,6 +74,22 @@ enum RelationshipStage {
   intimate
 }
 
+enum BotTaskType {
+  respond_to_burst
+  continue_after_lookup
+  proactive_news
+  proactive_memory
+  proactive_life_event
+}
+
+enum BotTaskStatus {
+  pending
+  running
+  completed
+  cancelled
+  failed
+}
+
 model User {
   id            String         @id // providerAccountId(Google sub) 또는 dev-admin
   email         String         @unique
@@ -82,6 +100,7 @@ model User {
   sessions      Session[]
   casterRuns    CasterRun[]
   personaStates PersonaState[]
+  botTasks      BotTask[]
 }
 
 // StoryGatcha의 admin_config/default 도큐먼트 대체.
@@ -110,6 +129,25 @@ model Character {
   knowledgeChunks KnowledgeChunk[]
   sessions        Session[]
   eventTemplates  EventTypeTemplate[]
+  botTasks        BotTask[]
+  interests       CharacterInterest[]
+}
+
+model CharacterInterest {
+  id          String    @id
+  characterId String
+  label       String
+  query       String
+  priority    Int       @default(50)
+  freshnessHours Int    @default(24)
+  enabled     Boolean   @default(true)
+  lastCheckedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, query])
+  @@index([characterId, enabled, priority])
 }
 
 // LLM 런타임 설정. 생성 파라미터와 안전 설정만 보관한다.
@@ -313,11 +351,36 @@ model KnowledgeChunk {
   updatedAt   DateTime     @updatedAt
   doc         KnowledgeDoc? @relation(fields: [docId], references: [id], onDelete: Cascade)
   character   Character    @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  meta        KnowledgeChunkMetadata?
 
   @@index([characterId, type])
   @@index([characterId, userId, type])
   @@index([sessionId])
   @@index([docId, ordinal])
+}
+
+model KnowledgeChunkMetadata {
+  id          String   @id
+  chunkId     String   @unique
+  weight      Float?
+  importance  Float?
+  confidence  Float?
+  topic       String?
+  tags        String[]
+  sourceUrls  String[]
+  sourceTitle String?
+  sourceName  String?
+  sourcePublishedAt DateTime?
+  fetchedAt   DateTime?
+  expiresAt   DateTime?
+  raw         Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  chunk       KnowledgeChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@index([topic])
+  @@index([sourcePublishedAt])
+  @@index([expiresAt])
 }
 
 model Session {
@@ -330,9 +393,32 @@ model Session {
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
   messages      Message[]
+  botTasks      BotTask[]
 
   @@unique([userId, characterId]) // 핵심 불변식: 1 (user, character) = 1 session
   @@index([userId, lastMessageAt])
+}
+
+model BotTask {
+  id          String        @id
+  sessionId   String
+  characterId String
+  userId      String
+  type        BotTaskType
+  status      BotTaskStatus @default(pending)
+  scheduledAt DateTime
+  payload     Json?
+  createdAt   DateTime      @default(now())
+  claimedAt   DateTime?
+  completedAt DateTime?
+  error       String?       @db.Text
+  session     Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  character   Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, status, scheduledAt])
+  @@index([characterId, scheduledAt])
+  @@index([userId, status, scheduledAt])
 }
 
 model Message {
