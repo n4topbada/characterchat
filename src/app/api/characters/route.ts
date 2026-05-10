@@ -35,7 +35,9 @@ export async function GET() {
       name: r.name,
       tagline: r.tagline,
       accentColor: r.accentColor,
-      portraitUrl: r.assets[0]?.blobUrl ?? null,
+      // /find SSR 과 동일 정책 — ani 가 있으면 ani 우선.
+      portraitUrl:
+        r.assets[0]?.animationUrl ?? r.assets[0]?.blobUrl ?? null,
       role: r.personaCore?.role ?? null,
       ageText: r.personaCore?.ageText ?? null,
       species: r.personaCore?.species ?? null,

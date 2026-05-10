@@ -38,7 +38,12 @@ export async function GET() {
       character: {
         slug: s.character.slug,
         name: s.character.name,
-        portraitUrl: s.character.assets[0]?.blobUrl ?? null,
+        // /history SSR 과 동일 정책: ani 가 등록돼 있으면 ani 우선. 이전엔
+        // blobUrl 만 내보내서 클라가 이 API 를 쓸 경우 정지컷이 떴다.
+        portraitUrl:
+          s.character.assets[0]?.animationUrl ??
+          s.character.assets[0]?.blobUrl ??
+          null,
         accentColor: s.character.accentColor,
       },
       preview: stripImageTags(s.messages[0]?.content ?? "").slice(0, 80),

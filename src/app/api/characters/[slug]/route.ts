@@ -22,8 +22,11 @@ export async function GET(
     name: c.name,
     tagline: c.tagline,
     accentColor: c.accentColor,
-    portraitUrl:
-      c.assets.find((a) => a.kind === "portrait")?.blobUrl ?? null,
+    portraitUrl: (() => {
+      const p = c.assets.find((a) => a.kind === "portrait");
+      // ani 가 등록돼 있으면 ani 우선 — 카드/헤더 일관성.
+      return p?.animationUrl ?? p?.blobUrl ?? null;
+    })(),
     heroUrl: c.assets.find((a) => a.kind === "hero")?.blobUrl ?? null,
     greeting: c.config?.greeting ?? null,
   });
