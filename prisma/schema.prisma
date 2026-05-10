@@ -80,6 +80,9 @@ enum BotTaskType {
   proactive_news
   proactive_memory
   proactive_life_event
+  refresh_interest_news
+  rollup_episode
+  rollup_relation
 }
 
 enum BotTaskStatus {
@@ -88,6 +91,13 @@ enum BotTaskStatus {
   completed
   cancelled
   failed
+}
+
+enum AppEventLevel {
+  debug
+  info
+  warn
+  error
 }
 
 model User {
@@ -101,6 +111,7 @@ model User {
   casterRuns    CasterRun[]
   personaStates PersonaState[]
   botTasks      BotTask[]
+  appEvents     AppEventLog[]
 }
 
 // StoryGatcha의 admin_config/default 도큐먼트 대체.
@@ -131,6 +142,7 @@ model Character {
   eventTemplates  EventTypeTemplate[]
   botTasks        BotTask[]
   interests       CharacterInterest[]
+  appEvents       AppEventLog[]
 }
 
 model CharacterInterest {
@@ -394,6 +406,7 @@ model Session {
   character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
   messages      Message[]
   botTasks      BotTask[]
+  appEvents     AppEventLog[]
 
   @@unique([userId, characterId]) // 핵심 불변식: 1 (user, character) = 1 session
   @@index([userId, lastMessageAt])
@@ -409,16 +422,52 @@ model BotTask {
   scheduledAt DateTime
   payload     Json?
   createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   claimedAt   DateTime?
+  lockedUntil DateTime?
   completedAt DateTime?
+  nextRetryAt DateTime?
+  attemptCount Int           @default(0)
+  maxAttempts  Int           @default(3)
+  dedupeKey    String?
   error       String?       @db.Text
   session     Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   character   Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appEvents   AppEventLog[]
 
   @@index([sessionId, status, scheduledAt])
   @@index([characterId, scheduledAt])
   @@index([userId, status, scheduledAt])
+  @@index([status, nextRetryAt, scheduledAt])
+  @@unique([dedupeKey])
+}
+
+model AppEventLog {
+  id          String        @id
+  level       AppEventLevel @default(info)
+  event       String
+  message     String?       @db.Text
+  userId      String?
+  characterId String?
+  sessionId   String?
+  taskId      String?
+  model       String?
+  status      String?
+  latencyMs   Int?
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  user        User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  character   Character?    @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  session     Session?      @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  task        BotTask?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([level, createdAt])
+  @@index([event, createdAt])
+  @@index([taskId])
+  @@index([sessionId, createdAt])
+  @@index([characterId, createdAt])
 }
 
 model Message {

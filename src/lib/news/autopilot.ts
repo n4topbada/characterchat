@@ -1,13 +1,9 @@
 import { prisma } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { buildTemporalContext } from "@/lib/temporal/timeline";
-import {
-  draftProactiveNewsLine,
-  saveRealtimeNewsChunk,
-  searchRealtimeNews,
-} from "@/lib/news/realtime";
 import { GEMINI_MODELS, withGeminiFallback } from "@/lib/gemini/client";
 import { PERMISSIVE_SAFETY } from "@/lib/gemini/safety";
+import { logEvent } from "@/lib/observability/log";
 
 const PROACTIVE_COOLDOWN_MS = 45 * 60 * 1000;
 const ACTIVE_STATES = new Set(["free", "personal", "late_night", "meal"]);
@@ -107,7 +103,7 @@ export async function ensureProactiveNewsTask(args: {
       sessionId: args.sessionId,
       userId: args.userId,
       status: { in: ["pending", "running"] },
-      type: "proactive_news",
+      type: { in: ["proactive_news", "refresh_interest_news"] },
     },
     select: { id: true },
   });
@@ -117,7 +113,7 @@ export async function ensureProactiveNewsTask(args: {
     where: {
       sessionId: args.sessionId,
       userId: args.userId,
-      type: "proactive_news",
+      type: { in: ["proactive_news", "refresh_interest_news"] },
       createdAt: { gte: new Date(Date.now() - PROACTIVE_COOLDOWN_MS) },
     },
     select: { id: true },
@@ -181,62 +177,48 @@ export async function ensureProactiveNewsTask(args: {
     data: { lastCheckedAt: new Date() },
   });
 
-  const found = await searchRealtimeNews({
-    query: interest.query,
-    characterName: core.displayName,
-    nowLabel: temporal.localLabel,
-  }).catch((e) => {
-    console.warn(
-      "[news-autopilot] search failed:",
-      e instanceof Error ? e.message : String(e),
-    );
-    return null;
-  });
-  if (!found?.summary) return { queued: false, reason: "search_empty" };
+  const dedupeKey = `refresh:${session.id}:${interest.query}`;
 
-  const chunkId = await saveRealtimeNewsChunk({
-    characterId: session.characterId,
-    userId: args.userId,
-    sessionId: session.id,
-    topic: interest.query,
-    summary: found.summary,
-    sourceUrls: found.sourceUrls,
-    raw: found.raw,
-    ttlHours: interest.freshnessHours,
-  });
-
-  const text = await draftProactiveNewsLine({
-    characterName: core.displayName,
-    speechHint: core.speechRegister,
-    summary: found.summary,
-    nowLabel: temporal.localLabel,
-  }).catch((e) => {
-    console.warn(
-      "[news-autopilot] draft failed:",
-      e instanceof Error ? e.message : String(e),
-    );
-    return "";
-  });
-  if (!text) return { queued: false, reason: "draft_empty" };
-
-  const task = await prisma.botTask.create({
-    data: {
+  const task = await prisma.botTask.upsert({
+    where: { dedupeKey },
+    update: {
+      status: "pending",
+      scheduledAt: new Date(),
+      nextRetryAt: null,
+      error: null,
+      payload: {
+        query: interest.query,
+        interestId: interest.id,
+        freshnessHours: interest.freshnessHours,
+        reason: "auto_interest_stale",
+      },
+    },
+    create: {
       id: newId(),
       sessionId: session.id,
       characterId: session.characterId,
       userId: args.userId,
-      type: "proactive_news",
+      type: "refresh_interest_news",
       status: "pending",
       scheduledAt: new Date(),
+      dedupeKey,
       payload: {
-        text,
-        chunkId,
         query: interest.query,
-        sourceUrls: found.sourceUrls,
+        interestId: interest.id,
+        freshnessHours: interest.freshnessHours,
         reason: "auto_interest_stale",
       },
     },
     select: { id: true },
+  });
+  await logEvent({
+    event: "task.created",
+    taskId: task.id,
+    sessionId: session.id,
+    userId: args.userId,
+    characterId: session.characterId,
+    status: "refresh_interest_news",
+    metadata: { query: interest.query, interestId: interest.id },
   });
 
   return { queued: true, reason: "queued", taskId: task.id };

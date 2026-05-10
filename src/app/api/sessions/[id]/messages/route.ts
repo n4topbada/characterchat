@@ -29,6 +29,7 @@ import {
   saveRealtimeNewsChunk,
   searchRealtimeNews,
 } from "@/lib/news/realtime";
+import { elapsedMs, logEvent } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -194,6 +195,7 @@ export async function POST(
         ? new Date(String((cached.metadata as Record<string, unknown>).expiresAt))
         : null;
     if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt < new Date()) {
+      const startedAt = performance.now();
       const found = await searchRealtimeNews({
         query: newsTrigger.query,
         characterName: core.displayName,
@@ -204,6 +206,15 @@ export async function POST(
           e instanceof Error ? e.message : String(e),
         );
         return null;
+      });
+      await logEvent({
+        level: found ? "info" : "warn",
+        event: found ? "news.search.completed" : "news.search.failed",
+        sessionId: id,
+        userId: gate.userId,
+        characterId: session.characterId,
+        latencyMs: elapsedMs(startedAt),
+        metadata: { query: newsTrigger.query, reason: newsTrigger.reason },
       });
       if (found?.summary) {
         await saveRealtimeNewsChunk({
@@ -355,6 +366,13 @@ export async function POST(
   });
 
   return sseStream(async (send) => {
+    await logEvent({
+      event: "chat.request",
+      sessionId: id,
+      userId: gate.userId,
+      characterId: session.characterId,
+      metadata: { length: parsed.data.content.length },
+    });
     // messageId 는 스트림 시작 전에 미리 정해 pickAsset 의 tie-break 해시 seed 로 사용.
     // 같은 status 가 반복되어도 메시지마다 결정적으로 다른 후보를 고를 수 있게 한다.
     const messageId = newId();
@@ -392,7 +410,17 @@ export async function POST(
       let lastErr: unknown = null;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
+          const attemptStartedAt = performance.now();
           const out = await runAttempt();
+          await logEvent({
+            event: "chat.llm.completed",
+            sessionId: id,
+            userId: gate.userId,
+            characterId: session.characterId,
+            model: cfg.model,
+            latencyMs: elapsedMs(attemptStartedAt),
+            metadata: { attempt, outputLength: out.length },
+          });
           if (isAcceptable(out)) {
             full = out;
             break;
@@ -410,6 +438,16 @@ export async function POST(
             full = out;
           }
         } catch (err) {
+          await logEvent({
+            level: "warn",
+            event: "chat.llm.failed",
+            sessionId: id,
+            userId: gate.userId,
+            characterId: session.characterId,
+            model: cfg.model,
+            message: err instanceof Error ? err.message : String(err),
+            metadata: { attempt },
+          });
           lastErr = err;
           const msg = err instanceof Error ? err.message : String(err);
           if (attempt < MAX_ATTEMPTS) {

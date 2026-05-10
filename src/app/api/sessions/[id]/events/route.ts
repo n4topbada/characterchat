@@ -4,6 +4,7 @@ import { requireAuth, errorJson } from "@/lib/api-utils";
 import { sseStream } from "@/lib/sse";
 import { newId } from "@/lib/ids";
 import { ensureProactiveNewsTask } from "@/lib/news/autopilot";
+import { logEvent } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -48,6 +49,15 @@ export async function GET(
           return null;
         });
         if (auto?.queued) {
+          await logEvent({
+            event: "events.task_queued",
+            taskId: auto.taskId,
+            sessionId: id,
+            userId: gate.userId,
+            characterId: session.characterId,
+            status: "proactive_news",
+            metadata: { reason: auto.reason },
+          });
           send("task_queued", { type: "proactive_news", id: auto.taskId });
         }
       }
@@ -111,6 +121,14 @@ export async function GET(
         });
 
         if (!seenMessages.has(messageId)) {
+          await logEvent({
+            event: "events.proactive_delivered",
+            taskId: task.id,
+            sessionId: id,
+            userId: gate.userId,
+            characterId: session.characterId,
+            status: task.type,
+          });
           seenMessages.add(messageId);
           send("message_start", {
             id: messageId,
